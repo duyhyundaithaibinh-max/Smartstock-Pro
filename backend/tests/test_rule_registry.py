@@ -25,7 +25,7 @@ class RuleRegistryTests(unittest.TestCase):
         self.assertEqual(rule_registry.list_versions()["total"], 1)
 
     def test_create_draft_is_immutable_and_has_config_hash(self):
-        config = {"trend": {"ema_fast": 20, "ema_slow": 50}}
+        config = {"fibonacci": {"wing": 1}}
         created = rule_registry.create_version("1.1.0", "EMA experiment", "Draft only", config)
         self.assertEqual(created["status"], "draft")
         self.assertEqual(created["config"], config)
@@ -34,7 +34,7 @@ class RuleRegistryTests(unittest.TestCase):
             rule_registry.create_version("1.1.0", "Overwrite", "", {})
 
     def test_activation_archives_previous_active_and_keeps_history(self):
-        rule_registry.create_version("1.1.0", "EMA experiment", "Draft", {"trend": {"ema_fast": 10}})
+        rule_registry.create_version("1.1.0", "EMA experiment", "Draft", {"volume_flow": {"window": 12}})
         activated = rule_registry.activate_version("1.1.0")
         self.assertEqual(activated["status"], "active")
         self.assertEqual(rule_registry.get_active_version()["version"], "1.1.0")
