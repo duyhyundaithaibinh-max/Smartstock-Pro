@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Body
 from pydantic import ValidationError
 from ..db import connection
 from ..schemas import SymbolCreate, Candle
-from .. import indicators, price_action, fibonacci, elliott, volume_flow, analysis_report, watchlist, chart_data
+from .. import indicators, price_action, fibonacci, elliott, volume_flow, analysis_report, watchlist, chart_data, stock_detail
 
 router = APIRouter(prefix="/api/v1", tags=["market"])
 EXCHANGES = [
@@ -64,6 +64,30 @@ def get_candles(symbol: str, timeframe: str = "1d", limit: int = Query(500, ge=1
             (symbol.upper(), timeframe, limit),
         ).fetchall()
     return [dict(row) for row in reversed(rows)]
+
+
+@router.get("/symbols/{symbol}/detail")
+def get_stock_detail(
+    symbol: str,
+    timeframe: str = Query("1d", min_length=2, max_length=8),
+    limit: int = Query(500, ge=1, le=5000),
+):
+    """Return the latest sourced OHLCV snapshot, indicators and price zones."""
+    normalized = symbol.upper()
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT symbol,name,exchange,sector FROM symbols WHERE symbol=?",
+            (normalized,),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(404, "Unknown symbol")
+    candles = get_candles(normalized, timeframe, limit)
+    try:
+        return stock_detail.build_stock_detail(
+            normalized, dict(row), candles, timeframe=timeframe
+        )
+    except ValueError as exc:
+        raise HTTPException(422, f"Unable to build stock detail: {exc}") from exc
 
 
 @router.get("/candles/chart")
