@@ -8,7 +8,7 @@ from typing import Any
 
 from .db import connection
 
-_VERSION = re.compile(r"^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$")
+_VERSION = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 _MAX_CONFIG_BYTES = 20_000
 
 
