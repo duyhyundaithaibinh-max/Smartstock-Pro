@@ -36,7 +36,7 @@ def _pivot_levels(values, is_high, lookback=120, wing=2):
     return pivots
 
 
-def _cluster_levels(pivots, tolerance):
+def _cluster_levels(pivots, tolerance, total_bars):
     clusters = []
     for index, value in sorted(pivots, key=lambda item: item[1]):
         match = next((cluster for cluster in clusters
@@ -53,7 +53,7 @@ def _cluster_levels(pivots, tolerance):
         {
             "price": round(sum(cluster["values"]) / len(cluster["values"]), 4),
             "touches": len(cluster["values"]),
-            "last_seen_bars_ago": len(pivots) and max(0, max(index for index, _ in pivots) - cluster["last_index"]) or 0,
+            "last_seen_bars_ago": max(0, total_bars - 1 - cluster["last_index"]),
         }
         for cluster in clusters
     ]
@@ -90,8 +90,8 @@ def analyze_price_action(highs, lows, closes, volumes, timestamps=None):
     high_pivots = _pivot_levels(highs, is_high=True)
     low_pivots = _pivot_levels(lows, is_high=False)
     tolerance = max(current_atr * 0.5, close * 0.003)
-    high_levels = _cluster_levels(high_pivots, tolerance)
-    low_levels = _cluster_levels(low_pivots, tolerance)
+    high_levels = _cluster_levels(high_pivots, tolerance, count)
+    low_levels = _cluster_levels(low_pivots, tolerance, count)
 
     supports = _nearest_levels(low_levels, close, "support")
     resistances = _nearest_levels(high_levels, close, "resistance")
