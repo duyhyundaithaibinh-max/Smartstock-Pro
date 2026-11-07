@@ -25,7 +25,6 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-  final TextEditingController _symbolController = TextEditingController(text: 'FPT');
   final TextEditingController _urlController = TextEditingController(text: 'http://10.0.2.2:8000');
   Map<String, dynamic>? _health;
   List<dynamic> _symbols = [];
@@ -52,7 +51,6 @@ class _DashboardPageState extends State<DashboardPage> {
 
   @override
   void dispose() {
-    _symbolController.dispose();
     _urlController.dispose();
     super.dispose();
   }
