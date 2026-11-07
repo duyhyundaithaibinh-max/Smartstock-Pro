@@ -30,6 +30,12 @@ jobs:
       - name: Generate Android platform files
         working-directory: mobile
         run: flutter create --platforms=android .
+      - name: Install Android API 36 for file picker plugin
+        working-directory: mobile
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36"
+          sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' android/app/build.gradle.kts
       - name: Resolve Flutter dependencies
         working-directory: mobile
         run: flutter pub get
