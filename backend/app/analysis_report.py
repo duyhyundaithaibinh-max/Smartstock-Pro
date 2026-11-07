@@ -3,7 +3,7 @@
 from . import price_action, fibonacci, elliott, volume_flow, indicators
 
 
-def build_analysis_report(candles):
+def build_analysis_report(candles, rule_config=None, rule_version="1.0.0", rule_config_sha256=None):
     if not candles:
         raise ValueError("At least one candle is required")
     highs = [float(c["high"]) for c in candles]
@@ -12,11 +12,26 @@ def build_analysis_report(candles):
     volumes = [float(c["volume"]) for c in candles]
     timestamps = [c["timestamp"] for c in candles]
     close = closes[-1]
+    rule_config = rule_config or {}
+    fibonacci_rules = rule_config.get("fibonacci", {})
+    elliott_rules = rule_config.get("elliott", {})
+    volume_rules = rule_config.get("volume_flow", {})
 
     trend = price_action.analyze_price_action(highs, lows, closes, volumes, timestamps)
-    fib = fibonacci.analyze_fibonacci(highs, lows, closes, timestamps)
-    wave = elliott.analyze_elliott(highs, lows, closes, timestamps)
-    flow = volume_flow.analyze_volume_flow(highs, lows, closes, volumes, timestamps)
+    fib = fibonacci.analyze_fibonacci(
+        highs, lows, closes, timestamps,
+        lookback=fibonacci_rules.get("lookback", 250),
+        wing=fibonacci_rules.get("wing", 2),
+    )
+    wave = elliott.analyze_elliott(
+        highs, lows, closes, timestamps,
+        lookback=elliott_rules.get("lookback", 250),
+        wing=elliott_rules.get("wing", 2),
+    )
+    flow = volume_flow.analyze_volume_flow(
+        highs, lows, closes, volumes, timestamps,
+        window=volume_rules.get("window", 20),
+    )
     macd = indicators.macd(closes)
     rsi = indicators.rsi(closes, 14)
     ema20 = indicators.ema(closes, 20)
@@ -103,7 +118,8 @@ def build_analysis_report(candles):
     ]
 
     return {
-        "analysis_rules_version": "1.0.0",
+        "analysis_rules_version": rule_version,
+        "analysis_rule_config_sha256": rule_config_sha256,
         "status": "ok",
         "as_of": timestamps[-1],
         "bars_available": len(candles),
