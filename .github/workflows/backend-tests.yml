@@ -39,9 +39,22 @@ jobs:
       - name: Run Flutter tests
         working-directory: mobile
         run: flutter test
-      - name: Build debug APK
+      - name: Build debug APK (retry transient Gradle repository failures)
         working-directory: mobile
-        run: flutter build apk --debug
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            echo "Android APK build attempt $attempt/3"
+            if flutter build apk --debug; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Build failed; waiting 20 seconds before retrying dependency resolution."
+              sleep 20
+            fi
+          done
+          echo "APK build failed after 3 attempts."
+          exit 1
       - uses: actions/upload-artifact@v4
         with:
           name: smartstock-pro-debug-apk
