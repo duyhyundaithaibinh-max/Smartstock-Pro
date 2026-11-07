@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Body
 from pydantic import ValidationError
 from ..db import connection
 from ..schemas import SymbolCreate, Candle
-from .. import indicators, price_action, fibonacci, elliott, volume_flow, analysis_report, watchlist, chart_data, stock_detail
+from .. import indicators, price_action, fibonacci, elliott, volume_flow, analysis_report, watchlist, chart_data, stock_detail, knowledge_base
 
 router = APIRouter(prefix="/api/v1", tags=["market"])
 EXCHANGES = [
@@ -394,3 +394,53 @@ def put_watchlist_order(symbols: list[str] = Body(..., min_length=0, max_length=
     if error == "must_include_exact_watchlist":
         raise HTTPException(422, "Order must contain every current watchlist symbol exactly once")
     return {"status": "updated", "symbols": [item.upper() for item in symbols]}
+
+
+
+@router.post("/knowledge/documents", status_code=201)
+async def upload_knowledge_document(
+    file: UploadFile = File(...),
+    source: str = Query("user_upload", min_length=1, max_length=100),
+    title: str | None = Query(default=None, max_length=200),
+):
+    """Extract and index a local TXT/Markdown/CSV/PDF document into SQLite."""
+    raw = await file.read(10_485_761)
+    if len(raw) > knowledge_base.MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "Document exceeds the 10 MB upload limit")
+    try:
+        result = knowledge_base.ingest_document(file.filename or "", raw, source=source, title=title)
+    except knowledge_base.KnowledgeBaseError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if result["status"] == "duplicate":
+        raise HTTPException(409, {
+            "message": "This exact document has already been indexed",
+            "document_id": result["id"],
+            "content_sha256": result["content_sha256"],
+        })
+    return result
+
+
+@router.get("/knowledge/documents")
+def list_knowledge_documents(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    """List indexed knowledge documents without returning their full text."""
+    return knowledge_base.list_documents(limit=limit, offset=offset)
+
+
+@router.get("/knowledge/documents/{document_id}")
+def get_knowledge_document(document_id: int):
+    """Return document metadata and its ordered text chunks."""
+    result = knowledge_base.get_document(document_id, include_chunks=True)
+    if result is None:
+        raise HTTPException(404, "Knowledge document not found")
+    return result
+
+
+@router.delete("/knowledge/documents/{document_id}")
+def delete_knowledge_document(document_id: int):
+    """Delete a document and cascade-delete all of its chunks."""
+    if not knowledge_base.delete_document(document_id):
+        raise HTTPException(404, "Knowledge document not found")
+    return {"document_id": document_id, "status": "deleted"}
