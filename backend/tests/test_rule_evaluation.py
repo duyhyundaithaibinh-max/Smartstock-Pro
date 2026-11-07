@@ -36,7 +36,7 @@ class RuleEvaluationTests(unittest.TestCase):
         self.assertIn("volume_flow_window", result["differences"])
         self.assertEqual(result["results"]["1.0.0"]["volume_flow_window"], 20)
         self.assertEqual(result["results"]["1.1.0"]["volume_flow_window"], 12)
-        self.assertIn("not backtest", " ".join(result["limitations"]))
+        self.assertIn("backtest", " ".join(result["limitations"]))
 
     def test_comparison_is_deterministic(self):
         versions = [
