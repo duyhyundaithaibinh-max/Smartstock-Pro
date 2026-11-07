@@ -1,11 +1,19 @@
-name: Backend tests
+name: SmartStock Pro CI
 on:
   push:
-    paths: ["backend/**", ".github/workflows/backend-tests.yml"]
+    paths:
+      - "backend/**"
+      - "mobile/**"
+      - "docker-compose.yml"
+      - ".github/workflows/**"
   pull_request:
-    paths: ["backend/**", ".github/workflows/backend-tests.yml"]
+    paths:
+      - "backend/**"
+      - "mobile/**"
+      - "docker-compose.yml"
+      - ".github/workflows/**"
 jobs:
-  test:
+  backend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,3 +22,30 @@ jobs:
           python-version: "3.12"
       - run: pip install -r backend/requirements.txt pytest
       - run: cd backend && pytest
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Generate Android platform files
+        working-directory: mobile
+        run: flutter create --platforms=android .
+      - name: Resolve Flutter dependencies
+        working-directory: mobile
+        run: flutter pub get
+      - name: Analyze Flutter code
+        working-directory: mobile
+        run: flutter analyze
+      - name: Run Flutter tests
+        working-directory: mobile
+        run: flutter test
+      - name: Build debug APK
+        working-directory: mobile
+        run: flutter build apk --debug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smartstock-pro-debug-apk
+          path: mobile/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
