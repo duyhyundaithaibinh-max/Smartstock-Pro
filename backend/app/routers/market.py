@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from pydantic import ValidationError
 from ..db import connection
 from ..schemas import SymbolCreate, Candle
-from .. import indicators
+from .. import indicators, price_action, fibonacci, elliott, volume_flow
 
 router = APIRouter(prefix="/api/v1", tags=["market"])
 EXCHANGES = [
@@ -14,86 +14,273 @@ EXCHANGES = [
     {"code": "UPCOM", "name": "Thị trường UPCoM"},
 ]
 
+
 @router.get("/markets")
 def markets():
     return EXCHANGES
+
 
 @router.post("/symbols", status_code=201)
 def create_symbol(payload: SymbolCreate):
     with connection() as conn:
         try:
-            conn.execute("INSERT INTO symbols(symbol,name,exchange,sector) VALUES(?,?,?,?)",
-                         (payload.symbol,payload.name,payload.exchange,payload.sector))
+            conn.execute(
+                "INSERT INTO symbols(symbol,name,exchange,sector) VALUES(?,?,?,?)",
+                (payload.symbol, payload.name, payload.exchange, payload.sector),
+            )
         except Exception as exc:
-            if "UNIQUE" in str(exc): raise HTTPException(409,"Symbol already exists")
+            if "UNIQUE" in str(exc):
+                raise HTTPException(409, "Symbol already exists")
             raise
     return payload.model_dump()
 
+
 @router.get("/symbols")
-def list_symbols(exchange: str | None=None, q: str | None=Query(default=None,max_length=80)):
-    sql="SELECT symbol,name,exchange,sector FROM symbols"; clauses=[]; params=[]
+def list_symbols(exchange: str | None = None, q: str | None = Query(default=None, max_length=80)):
+    sql = "SELECT symbol,name,exchange,sector FROM symbols"
+    clauses = []
+    params = []
     if exchange:
-        if exchange not in {"HOSE","HNX","UPCOM"}: raise HTTPException(400,"Unsupported exchange")
-        clauses.append("exchange=?"); params.append(exchange)
+        if exchange not in {"HOSE", "HNX", "UPCOM"}:
+            raise HTTPException(400, "Unsupported exchange")
+        clauses.append("exchange=?")
+        params.append(exchange)
     if q:
-        clauses.append("(symbol LIKE ? OR name LIKE ?)"); params.extend([f"%{q}%",f"%{q}%"])
-    if clauses: sql+=" WHERE "+" AND ".join(clauses)
-    sql+=" ORDER BY symbol"
-    with connection() as conn: return [dict(row) for row in conn.execute(sql,params).fetchall()]
+        clauses.append("(symbol LIKE ? OR name LIKE ?)")
+        params.extend([f"%{q}%", f"%{q}%"])
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    sql += " ORDER BY symbol"
+    with connection() as conn:
+        return [dict(row) for row in conn.execute(sql, params).fetchall()]
+
 
 @router.get("/candles")
-def get_candles(symbol: str,timeframe: str="1d",limit: int=Query(500,ge=1,le=5000)):
+def get_candles(symbol: str, timeframe: str = "1d", limit: int = Query(500, ge=1, le=5000)):
     with connection() as conn:
-        rows=conn.execute("""SELECT timestamp,open,high,low,close,volume,source FROM candles
+        rows = conn.execute(
+            """SELECT timestamp,open,high,low,close,volume,source FROM candles
             WHERE symbol=? AND timeframe=? ORDER BY timestamp DESC LIMIT ?""",
-            (symbol.upper(),timeframe,limit)).fetchall()
+            (symbol.upper(), timeframe, limit),
+        ).fetchall()
     return [dict(row) for row in reversed(rows)]
 
+
 @router.post("/candles/import-csv")
-async def import_csv(symbol: str,source: str=Query(min_length=2,max_length=100),file: UploadFile=File(...)):
-    if not file.filename or not file.filename.lower().endswith(".csv"): raise HTTPException(415,"Only CSV files are accepted")
-    raw=await file.read(10_000_001)
-    if len(raw)>10_000_000: raise HTTPException(413,"CSV file exceeds 10 MB")
+async def import_csv(
+    symbol: str,
+    source: str = Query(min_length=2, max_length=100),
+    file: UploadFile = File(...),
+):
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(415, "Only CSV files are accepted")
+    raw = await file.read(10_000_001)
+    if len(raw) > 10_000_000:
+        raise HTTPException(413, "CSV file exceeds 10 MB")
+
     try:
-        reader=csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
-        required={"timestamp","open","high","low","close","volume"}
+        reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
+        required = {"timestamp", "open", "high", "low", "close", "volume"}
         if not reader.fieldnames or not required.issubset(set(reader.fieldnames)):
             raise ValueError("CSV requires timestamp,open,high,low,close,volume columns")
-        parsed=[]
-        for line_no,row in enumerate(reader,start=2):
-            candle=Candle.model_validate({"timestamp":row["timestamp"],"open":row["open"],"high":row["high"],
-                "low":row["low"],"close":row["close"],"volume":row["volume"]})
-            if candle.high<max(candle.open,candle.close) or candle.low>min(candle.open,candle.close):
-                raise ValueError(f"Invalid OHLC relationship at line {line_no}")
+
+        parsed = []
+        seen_timestamps = set()
+        for line_no, row in enumerate(reader, start=2):
+            try:
+                candle = Candle.model_validate({
+                    "timestamp": row["timestamp"],
+                    "open": row["open"],
+                    "high": row["high"],
+                    "low": row["low"],
+                    "close": row["close"],
+                    "volume": row["volume"],
+                })
+            except ValidationError as exc:
+                raise ValueError(f"Invalid candle at line {line_no}: {exc}") from exc
+
+            timestamp_key = candle.timestamp.isoformat()
+            if timestamp_key in seen_timestamps:
+                raise ValueError(f"Duplicate timestamp at line {line_no}: {timestamp_key}")
+            seen_timestamps.add(timestamp_key)
             parsed.append(candle)
-    except (UnicodeDecodeError,csv.Error,ValueError,ValidationError) as exc:
-        raise HTTPException(400,f"Invalid CSV: {exc}")
-    if not parsed: raise HTTPException(400,"CSV contains no candle rows")
-    now=datetime.now(timezone.utc).isoformat()
+    except (UnicodeDecodeError, csv.Error, ValueError, KeyError) as exc:
+        raise HTTPException(400, f"Invalid CSV: {exc}")
+
+    if not parsed:
+        raise HTTPException(400, "CSV contains no candle rows")
+
+    now = datetime.now(timezone.utc).isoformat()
+    normalized_symbol = symbol.upper()
     with connection() as conn:
-        if not conn.execute("SELECT 1 FROM symbols WHERE symbol=?",(symbol.upper(),)).fetchone():
-            raise HTTPException(404,"Create the symbol before importing candles")
-        conn.executemany("""INSERT INTO candles(symbol,timeframe,timestamp,open,high,low,close,volume,source,fetched_at)
+        if not conn.execute("SELECT 1 FROM symbols WHERE symbol=?", (normalized_symbol,)).fetchone():
+            raise HTTPException(404, "Create the symbol before importing candles")
+        conn.executemany(
+            """INSERT INTO candles(symbol,timeframe,timestamp,open,high,low,close,volume,source,fetched_at)
             VALUES(?,'1d',?,?,?,?,?,?,?,?) ON CONFLICT(symbol,timeframe,timestamp) DO UPDATE SET
             open=excluded.open,high=excluded.high,low=excluded.low,close=excluded.close,
             volume=excluded.volume,source=excluded.source,fetched_at=excluded.fetched_at""",
-            [(symbol.upper(),c.timestamp.isoformat(),c.open,c.high,c.low,c.close,c.volume,source,now) for c in parsed])
-    return {"symbol":symbol.upper(),"imported":len(parsed),"source":source,"timeframe":"1d"}
+            [
+                (normalized_symbol, c.timestamp.isoformat(), c.open, c.high, c.low, c.close, c.volume, source, now)
+                for c in parsed
+            ],
+        )
+    return {
+        "symbol": normalized_symbol,
+        "imported": len(parsed),
+        "source": source,
+        "timeframe": "1d",
+        "timestamp_timezone": "Asia/Ho_Chi_Minh",
+        "price_adjustment": "unknown",
+        "note": "Price adjustment status is not inferred from OHLCV. Confirm corporate-action adjustment with the data provider.",
+    }
+
 
 @router.get("/indicators")
-def get_indicators(symbol: str,timeframe: str="1d",limit: int=Query(500,ge=30,le=5000)):
-    candles=get_candles(symbol,timeframe,limit)
-    if not candles: raise HTTPException(404,"No candle data found")
-    closes=[c["close"] for c in candles]; highs=[c["high"] for c in candles]
-    lows=[c["low"] for c in candles]; volumes=[c["volume"] for c in candles]
-    macd=indicators.macd(closes)
-    return {"symbol":symbol.upper(),"timeframe":timeframe,"timestamps":[c["timestamp"] for c in candles],
-        "sma20":indicators.sma(closes,20),"sma50":indicators.sma(closes,50),
-        "ema20":indicators.ema(closes,20),"rsi14":indicators.rsi(closes,14),"macd":macd,
-        "atr14":indicators.atr(highs,lows,closes,14),"obv":indicators.obv(closes,volumes),
-        "bollinger20":indicators.bollinger(closes,20,2.0),
-        "vwap_cumulative":indicators.vwap(highs,lows,closes,volumes),
-        "stochastic14":indicators.stochastic(highs,lows,closes,14,3),
-        "volume_profile":indicators.volume_profile(highs,lows,closes,volumes),
-        "data_source":sorted({c["source"] for c in candles}),
-        "note":"Indicators use stored source candles. Verify corporate-action adjustments and timeframe-specific VWAP interpretation."}
+def get_indicators(symbol: str, timeframe: str = "1d", limit: int = Query(500, ge=30, le=5000)):
+    candles = get_candles(symbol, timeframe, limit)
+    if not candles:
+        raise HTTPException(404, "No candle data found")
+    closes = [c["close"] for c in candles]
+    highs = [c["high"] for c in candles]
+    lows = [c["low"] for c in candles]
+    volumes = [c["volume"] for c in candles]
+    macd = indicators.macd(closes)
+    return {
+        "symbol": symbol.upper(),
+        "timeframe": timeframe,
+        "timestamps": [c["timestamp"] for c in candles],
+        "sma20": indicators.sma(closes, 20),
+        "sma50": indicators.sma(closes, 50),
+        "ema20": indicators.ema(closes, 20),
+        "rsi14": indicators.rsi(closes, 14),
+        "macd": macd,
+        "atr14": indicators.atr(highs, lows, closes, 14),
+        "obv": indicators.obv(closes, volumes),
+        "bollinger20": indicators.bollinger(closes, 20, 2.0),
+        "vwap_cumulative": indicators.vwap(highs, lows, closes, volumes),
+        "stochastic14": indicators.stochastic(highs, lows, closes, 14, 3),
+        "volume_profile": indicators.volume_profile(highs, lows, closes, volumes),
+        "data_source": sorted({c["source"] for c in candles}),
+        "note": "Indicators use stored source candles. Verify corporate-action adjustments and timeframe-specific VWAP interpretation.",
+    }
+
+
+
+@router.get("/analysis/price-action")
+def get_price_action_analysis(
+    symbol: str,
+    timeframe: str = "1d",
+    limit: int = Query(500, ge=1, le=5000),
+):
+    """Deterministic trend, support/resistance and breakout analysis from stored OHLCV."""
+    candles = get_candles(symbol, timeframe, limit)
+    if not candles:
+        raise HTTPException(404, "No candle data found")
+    try:
+        return {
+            "symbol": symbol.upper(),
+            "timeframe": timeframe,
+            "data_source": sorted({c["source"] for c in candles}),
+            "analysis": price_action.analyze_price_action(
+                [c["high"] for c in candles],
+                [c["low"] for c in candles],
+                [c["close"] for c in candles],
+                [c["volume"] for c in candles],
+                timestamps=[c["timestamp"] for c in candles],
+            ),
+        }
+    except ValueError as exc:
+        raise HTTPException(422, f"Unable to analyze OHLCV: {exc}") from exc
+
+
+@router.get("/analysis/fibonacci")
+def get_fibonacci_analysis(
+    symbol: str,
+    timeframe: str = "1d",
+    limit: int = Query(500, ge=1, le=5000),
+    lookback: int = Query(250, ge=10, le=5000),
+    wing: int = Query(2, ge=1, le=10),
+):
+    """Deterministic Fibonacci price/time projections from confirmed OHLCV pivots."""
+    candles = get_candles(symbol, timeframe, limit)
+    if not candles:
+        raise HTTPException(404, "No candle data found")
+    try:
+        analysis = fibonacci.analyze_fibonacci(
+            [c["high"] for c in candles],
+            [c["low"] for c in candles],
+            [c["close"] for c in candles],
+            timestamps=[c["timestamp"] for c in candles],
+            lookback=lookback,
+            wing=wing,
+        )
+        return {
+            "symbol": symbol.upper(),
+            "timeframe": timeframe,
+            "data_source": sorted({c["source"] for c in candles}),
+            "analysis": analysis,
+        }
+    except ValueError as exc:
+        raise HTTPException(422, f"Unable to calculate Fibonacci levels: {exc}") from exc
+
+
+@router.get("/analysis/elliott")
+def get_elliott_analysis(
+    symbol: str,
+    timeframe: str = "1d",
+    limit: int = Query(500, ge=1, le=5000),
+    lookback: int = Query(250, ge=10, le=5000),
+    wing: int = Query(2, ge=1, le=10),
+):
+    """Rule-based Elliott five-wave impulse hypothesis from confirmed OHLCV pivots."""
+    candles = get_candles(symbol, timeframe, limit)
+    if not candles:
+        raise HTTPException(404, "No candle data found")
+    try:
+        analysis = elliott.analyze_elliott(
+            [c["high"] for c in candles],
+            [c["low"] for c in candles],
+            [c["close"] for c in candles],
+            timestamps=[c["timestamp"] for c in candles],
+            lookback=lookback,
+            wing=wing,
+        )
+        return {
+            "symbol": symbol.upper(),
+            "timeframe": timeframe,
+            "data_source": sorted({c["source"] for c in candles}),
+            "analysis": analysis,
+        }
+    except ValueError as exc:
+        raise HTTPException(422, f"Unable to evaluate Elliott structure: {exc}") from exc
+
+
+@router.get("/analysis/volume-flow")
+def get_volume_flow_analysis(
+    symbol: str,
+    timeframe: str = "1d",
+    limit: int = Query(500, ge=1, le=5000),
+    window: int = Query(20, ge=2, le=250),
+):
+    """Deterministic OHLCV money-flow and accumulation/distribution observations."""
+    candles = get_candles(symbol, timeframe, limit)
+    if not candles:
+        raise HTTPException(404, "No candle data found")
+    try:
+        analysis = volume_flow.analyze_volume_flow(
+            [c["high"] for c in candles],
+            [c["low"] for c in candles],
+            [c["close"] for c in candles],
+            [c["volume"] for c in candles],
+            timestamps=[c["timestamp"] for c in candles],
+            window=window,
+        )
+        return {
+            "symbol": symbol.upper(),
+            "timeframe": timeframe,
+            "data_source": sorted({c["source"] for c in candles}),
+            "analysis": analysis,
+        }
+    except ValueError as exc:
+        raise HTTPException(422, f"Unable to analyze volume flow: {exc}") from exc

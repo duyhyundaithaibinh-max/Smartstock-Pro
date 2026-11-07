@@ -15,11 +15,11 @@ Agent xử lý **một mục mỗi lượt chạy**, theo thứ tự ưu tiên. 
 
 ### P0 — Hoàn thiện nền tảng phân tích MVP
 
-- [ ] **SP-001 — Kiểm tra hợp đồng dữ liệu OHLCV và chuẩn hóa dữ liệu.** Rà soát timestamp, timezone, điều chỉnh giá, dữ liệu thiếu/trùng, volume, sàn và nguồn dữ liệu; bổ sung validation và test. Không tự ý giả định dữ liệu đã điều chỉnh.
-- [ ] **SP-002 — Xây dựng mô hình phân tích xu hướng và vùng giá.** Tạo schema/API cho xu hướng tăng/giảm/đi ngang, hỗ trợ/kháng cự, vùng breakout và điều kiện xác nhận/vô hiệu.
-- [ ] **SP-003 — Fibonacci giá và thời gian.** Tính các mức giá/time ratio từ swing points được xác định; lưu đầu vào và phương pháp để kết quả có thể tái lập.
-- [ ] **SP-004 — Cấu trúc sóng Elliott dạng giả thuyết.** Thiết kế nhiều kịch bản sóng, điều kiện xác nhận/vô hiệu và mức độ tin cậy; không khẳng định một cách đếm là sự thật tuyệt đối.
-- [ ] **SP-005 — Dòng tiền và tín hiệu tích lũy/phân phối.** Bổ sung các phép tính có thể kiểm chứng từ OHLCV, ghi rõ giới hạn khi không có dữ liệu giao dịch chi tiết.
+- [x] **SP-001 — Kiểm tra hợp đồng dữ liệu OHLCV và chuẩn hóa dữ liệu.** Đã chuẩn hóa timestamp về Asia/Ho_Chi_Minh; chấp nhận ngày giao dịch YYYY-MM-DD, bắt buộc datetime có timezone; kiểm tra OHLC, số hữu hạn, volume không âm; từ chối timestamp trùng trong cùng file CSV; API nêu rõ trạng thái điều chỉnh giá là unknown, không tự suy đoán. Backend CI: 18 tests passed. 
+- [x] **SP-002 — Xây dựng mô hình phân tích xu hướng và vùng giá.** Đã bổ sung engine xác định xu hướng bằng EMA20/EMA50, pivot support/resistance, breakout/breakdown theo biên ATR và xác nhận volume so với 20 nến trước; API `/api/v1/analysis/price-action`; trả điều kiện xác nhận/vô hiệu và giới hạn phương pháp. Có unit tests.
+- [x] **SP-003 — Fibonacci giá và thời gian.** Đã bổ sung engine xác định hai pivot trái dấu gần nhất đã xác nhận; tính retracement, extension và time projection theo số nến giao dịch; API `/api/v1/analysis/fibonacci`; trả điểm neo, timestamp, tham số pivot, phương pháp và giới hạn. Có unit tests.
+- [x] **SP-004 — Cấu trúc sóng Elliott dạng giả thuyết.** Đã bổ sung bộ đánh giá impulse 5 sóng từ sáu pivot luân phiên đã xác nhận; kiểm tra Wave 2, Wave 3, vùng chồng lấn Wave 4 và quy tắc Wave 3 không ngắn nhất; trả rule score, sóng, điều kiện xác nhận/vô hiệu và giới hạn. API `/api/v1/analysis/elliott`; có unit tests tăng/giảm và trường hợp vi phạm.
+- [x] **SP-005 — Dòng tiền và tín hiệu tích lũy/phân phối.** Đã bổ sung CMF, ADL, OBV, up/down volume ratio, phân kỳ giá-volume và co hẹp volume; phân loại ứng viên tích lũy/phân phối theo điều kiện minh bạch. API `/api/v1/analysis/volume-flow`; có unit tests và giới hạn rõ ràng do chỉ có OHLCV.
 - [ ] **SP-006 — API tổng hợp báo cáo phân tích.** Trả về dữ liệu đầu vào, chỉ báo, vùng giá, kịch bản tăng/cơ sở/giảm và giải thích bằng chứng.
 
 ### P1 — Android MVP
