@@ -1,17 +1,9 @@
 name: SmartStock Pro CI
 on:
   push:
-    paths:
-      - "backend/**"
-      - "mobile/**"
-      - "docker-compose.yml"
-      - ".github/workflows/**"
+    paths: ["backend/**", "mobile/**", "docker-compose.yml", ".github/workflows/**"]
   pull_request:
-    paths:
-      - "backend/**"
-      - "mobile/**"
-      - "docker-compose.yml"
-      - ".github/workflows/**"
+    paths: ["backend/**", "mobile/**", "docker-compose.yml", ".github/workflows/**"]
 jobs:
   backend:
     runs-on: ubuntu-latest
