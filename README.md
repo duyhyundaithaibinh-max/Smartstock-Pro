@@ -54,4 +54,10 @@ Nến tuần/tháng chỉ tổng hợp từ các phiên ngày có sẵn; hệ th
 - Delete: `DELETE /api/v1/knowledge/documents/{id}`.
 - Supported formats: UTF-8 TXT/Markdown/CSV and text-based PDF; scanned PDFs requiring OCR are rejected explicitly.
 - Local SQLite storage only; 10 MB upload cap, SHA-256 duplicate detection, deterministic 1,200-character chunks with 150-character overlap.
-- This step does not yet implement embeddings or RAG; those belong to SP-015.
+- Local retrieval: `GET /api/v1/knowledge/search?q=Fibonacci&top_k=5` — BM25-style lexical ranking, stable citation IDs, document provenance and bounded retrieval context. No embeddings, model calls or paid API; scanned PDFs still need OCR.
+
+## Knowledge retrieval (SP-015 — foundation)
+- Search indexed chunks: `GET /api/v1/knowledge/search?q=Elliott%20Wave&top_k=5`.
+- Each hit returns a stable citation ID (`kb:document_id:chunk_index`), source filename/title, source label, SHA-256 and character offsets.
+- The retrieval context is bounded to 12,000 characters and explicitly labels retrieved text as untrusted evidence; instructions embedded in source documents must not be followed.
+- Current retrieval is deterministic BM25-style lexical matching, not semantic/vector search. It does not call an LLM or external service. Embeddings, model-backed generation and user/role-level document permissions remain future work.
