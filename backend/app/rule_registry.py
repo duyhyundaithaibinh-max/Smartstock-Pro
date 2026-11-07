@@ -12,9 +12,29 @@ _VERSION = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 _MAX_CONFIG_BYTES = 20_000
 
 
-def _canonical_config(config: Any) -> tuple[str, str]:
+def _validate_rule_config(config: Any) -> None:
     if not isinstance(config, dict):
         raise ValueError("config must be a JSON object")
+    supported = {
+        "fibonacci": {"lookback": (10, 5000), "wing": (1, 10)},
+        "elliott": {"lookback": (10, 5000), "wing": (1, 10)},
+        "volume_flow": {"window": (2, 250)},
+    }
+    for section, values in config.items():
+        if section not in supported:
+            raise ValueError(f"unsupported rule section: {section}")
+        if not isinstance(values, dict):
+            raise ValueError(f"{section} configuration must be a JSON object")
+        for key, value in values.items():
+            if key not in supported[section]:
+                raise ValueError(f"unsupported rule parameter: {section}.{key}")
+            minimum, maximum = supported[section][key]
+            if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
+                raise ValueError(f"{section}.{key} must be an integer from {minimum} to {maximum}")
+
+
+def _canonical_config(config: Any) -> tuple[str, str]:
+    _validate_rule_config(config)
     try:
         encoded = json.dumps(config, ensure_ascii=False, sort_keys=True,
                              separators=(",", ":"), allow_nan=False)
