@@ -227,7 +227,7 @@ class _OhlcvPainter extends CustomPainter {
       canvas.drawLine(Offset(left, y), Offset(size.width - right, y), grid);
     }
     final slot = plotWidth / candles.length;
-    final bodyWidth = (slot * 0.62).clamp(1.0, 12.0);
+    final bodyWidth = (slot * 0.62).clamp(1.0, 12.0).toDouble();
     double yFor(double value) =>
         top + (ceiling - value) / (ceiling - floor) * plotHeight;
 
@@ -283,7 +283,7 @@ class _VolumePainter extends CustomPainter {
     final maxVolume = volumes.reduce((a, b) => a > b ? a : b);
     if (maxVolume <= 0) return;
     final slot = size.width / candles.length;
-    final barWidth = (slot * 0.62).clamp(1.0, 12.0);
+    final barWidth = (slot * 0.62).clamp(1.0, 12.0).toDouble();
     final grid = Paint()
       ..color = gridColor.withOpacity(0.65)
       ..strokeWidth = 0.7;
