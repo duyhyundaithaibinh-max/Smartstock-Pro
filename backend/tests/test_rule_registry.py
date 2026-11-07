@@ -61,6 +61,19 @@ class RuleRegistryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             rule_registry.create_version("2.0.0", "Name", "", {"text": "x" * 21_000})
 
+    def test_only_supported_parameter_sections_and_ranges_are_accepted(self):
+        invalid_configs = [
+            {"unknown": {"value": 1}},
+            {"fibonacci": {"wing": 0}},
+            {"elliott": {"lookback": 9}},
+            {"volume_flow": {"window": 251}},
+            {"volume_flow": {"window": True}},
+        ]
+        for index, config in enumerate(invalid_configs):
+            with self.subTest(config=config):
+                with self.assertRaises(ValueError):
+                    rule_registry.create_version(f"2.0.{index}", "Invalid", "", config)
+
 
 if __name__ == "__main__":
     unittest.main()
