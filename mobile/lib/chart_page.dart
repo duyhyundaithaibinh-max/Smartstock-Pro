@@ -220,7 +220,7 @@ class _OhlcvPainter extends CustomPainter {
     final plotWidth = size.width - left - right;
     final plotHeight = size.height - top - bottom;
     final grid = Paint()
-      ..color = gridColor.withValues(alpha: 0.65)
+      ..color = gridColor.withOpacity(0.65)
       ..strokeWidth = 0.7;
     for (var i = 0; i <= 4; i++) {
       final y = top + plotHeight * i / 4;
@@ -285,7 +285,7 @@ class _VolumePainter extends CustomPainter {
     final slot = size.width / candles.length;
     final barWidth = (slot * 0.62).clamp(1.0, 12.0);
     final grid = Paint()
-      ..color = gridColor.withValues(alpha: 0.65)
+      ..color = gridColor.withOpacity(0.65)
       ..strokeWidth = 0.7;
     canvas.drawLine(Offset(0, size.height - 1), Offset(size.width, size.height - 1), grid);
     for (var i = 0; i < candles.length; i++) {
@@ -297,7 +297,7 @@ class _VolumePainter extends CustomPainter {
       final x = slot * (i + 0.5);
       canvas.drawRect(
         Rect.fromLTRB(x - barWidth / 2, size.height - height, x + barWidth / 2, size.height),
-        Paint()..color = close >= open ? upColor.withValues(alpha: 0.75) : downColor.withValues(alpha: 0.75),
+        Paint()..color = close >= open ? upColor.withOpacity(0.75) : downColor.withOpacity(0.75),
       );
     }
   }
