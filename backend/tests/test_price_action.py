@@ -1,6 +1,6 @@
 import unittest
 
-from app.price_action import analyze_price_action
+from app.price_action import analyze_price_action, _cluster_levels
 
 
 class PriceActionTests(unittest.TestCase):
@@ -56,6 +56,12 @@ class PriceActionTests(unittest.TestCase):
     def test_rejects_invalid_ohlc(self):
         with self.assertRaises(ValueError):
             analyze_price_action([10, 11], [9, 10], [11, 10], [100, 200])
+
+    def test_pivot_level_recency_counts_bars_to_latest_candle(self):
+        levels = _cluster_levels([(2, 10.0), (5, 10.2)], 0.5, total_bars=8)
+        self.assertEqual(len(levels), 1)
+        self.assertEqual(levels[0]["touches"], 2)
+        self.assertEqual(levels[0]["last_seen_bars_ago"], 2)
 
     def test_timestamps_must_match_series(self):
         highs, lows, closes, volumes = self.make_series(20)
