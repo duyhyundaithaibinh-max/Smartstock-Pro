@@ -3,6 +3,7 @@
 Synthetic candles in this module are test fixtures only; they are never market data.
 """
 import math
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -16,7 +17,7 @@ def synthetic_candles():
     for index in range(120):
         close = 30.0 + index * 0.12 + math.sin(index / 4.0) * 1.8
         candles.append({
-            "timestamp": f"2026-01-{(index % 28) + 1:02d}T00:00:00+07:00",
+            "timestamp": (datetime(2026, 1, 1) + timedelta(days=index)).isoformat() + "+07:00",
             "open": round(close - 0.25, 4),
             "high": round(close + 0.8, 4),
             "low": round(close - 0.8, 4),
