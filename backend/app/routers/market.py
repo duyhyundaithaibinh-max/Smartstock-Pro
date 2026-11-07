@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from pydantic import ValidationError
 from ..db import connection
 from ..schemas import SymbolCreate, Candle
-from .. import indicators, price_action, fibonacci, elliott
+from .. import indicators, price_action, fibonacci, elliott, volume_flow
 
 router = APIRouter(prefix="/api/v1", tags=["market"])
 EXCHANGES = [
@@ -254,3 +254,33 @@ def get_elliott_analysis(
         }
     except ValueError as exc:
         raise HTTPException(422, f"Unable to evaluate Elliott structure: {exc}") from exc
+
+
+@router.get("/analysis/volume-flow")
+def get_volume_flow_analysis(
+    symbol: str,
+    timeframe: str = "1d",
+    limit: int = Query(500, ge=1, le=5000),
+    window: int = Query(20, ge=2, le=250),
+):
+    """Deterministic OHLCV money-flow and accumulation/distribution observations."""
+    candles = get_candles(symbol, timeframe, limit)
+    if not candles:
+        raise HTTPException(404, "No candle data found")
+    try:
+        analysis = volume_flow.analyze_volume_flow(
+            [c["high"] for c in candles],
+            [c["low"] for c in candles],
+            [c["close"] for c in candles],
+            [c["volume"] for c in candles],
+            timestamps=[c["timestamp"] for c in candles],
+            window=window,
+        )
+        return {
+            "symbol": symbol.upper(),
+            "timeframe": timeframe,
+            "data_source": sorted({c["source"] for c in candles}),
+            "analysis": analysis,
+        }
+    except ValueError as exc:
+        raise HTTPException(422, f"Unable to analyze volume flow: {exc}") from exc
