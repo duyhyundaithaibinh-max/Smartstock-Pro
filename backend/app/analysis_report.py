@@ -120,6 +120,7 @@ def build_analysis_report(candles, rule_config=None, rule_version="1.0.0", rule_
     return {
         "analysis_rules_version": rule_version,
         "analysis_rule_config_sha256": rule_config_sha256,
+        "analysis_rule_parameters": rule_config,
         "status": "ok",
         "as_of": timestamps[-1],
         "bars_available": len(candles),
