@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from pydantic import ValidationError
 from ..db import connection
 from ..schemas import SymbolCreate, Candle
-from .. import indicators, price_action, fibonacci, elliott, volume_flow
+from .. import indicators, price_action, fibonacci, elliott, volume_flow, analysis_report
 
 router = APIRouter(prefix="/api/v1", tags=["market"])
 EXCHANGES = [
@@ -284,3 +284,24 @@ def get_volume_flow_analysis(
         }
     except ValueError as exc:
         raise HTTPException(422, f"Unable to analyze volume flow: {exc}") from exc
+
+
+
+@router.get("/analysis/report")
+def get_analysis_report(
+    symbol: str,
+    timeframe: str = "1d",
+    limit: int = Query(500, ge=1, le=5000),
+):
+    """Combined deterministic technical report and conditional market scenarios."""
+    candles = get_candles(symbol, timeframe, limit)
+    if not candles:
+        raise HTTPException(404, "No candle data found")
+    try:
+        return {
+            "symbol": symbol.upper(),
+            "timeframe": timeframe,
+            "report": analysis_report.build_analysis_report(candles),
+        }
+    except ValueError as exc:
+        raise HTTPException(422, f"Unable to build analysis report: {exc}") from exc
