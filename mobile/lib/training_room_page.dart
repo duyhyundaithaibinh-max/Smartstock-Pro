@@ -1,11 +1,12 @@
 import 'dart:convert';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
-/// Local knowledge retrieval UI. This screen displays source passages only;
-/// it does not pretend that lexical retrieval is an AI-generated answer.
+/// Local knowledge retrieval and document management.
+/// Search results are source passages, not AI-generated answers.
 class TrainingRoomPage extends StatefulWidget {
   const TrainingRoomPage({super.key, required this.baseUrl});
 
@@ -18,10 +19,143 @@ class TrainingRoomPage extends StatefulWidget {
 class _TrainingRoomPageState extends State<TrainingRoomPage> {
   final TextEditingController _queryController = TextEditingController();
   List<dynamic> _results = [];
+  List<dynamic> _documents = [];
   Map<String, dynamic>? _context;
   String? _error;
   bool _loading = false;
+  bool _uploading = false;
+  bool _documentsLoading = false;
   bool _searched = false;
+
+  Uri _uri(String path, [Map<String, String>? query]) {
+    return Uri.parse('${widget.baseUrl}$path').replace(queryParameters: query);
+  }
+
+  Future<void> _loadDocuments() async {
+    setState(() {
+      _documentsLoading = true;
+      _error = null;
+    });
+    try {
+      final response = await http.get(_uri('/api/v1/knowledge/documents', {
+        'limit': '100',
+        'offset': '0',
+      })).timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200) {
+        throw Exception('Backend trả về HTTP ${response.statusCode}');
+      }
+      final payload = jsonDecode(response.body) as Map<String, dynamic>;
+      if (!mounted) return;
+      setState(() => _documents = payload['items'] as List<dynamic>? ?? []);
+    } catch (error) {
+      if (mounted) setState(() => _error = 'Không tải được danh sách tài liệu: $error');
+    } finally {
+      if (mounted) setState(() => _documentsLoading = false);
+    }
+  }
+
+  Future<void> _pickAndUpload() async {
+    if (_uploading) return;
+    try {
+      final selection = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['txt', 'md', 'csv', 'pdf'],
+        withData: true,
+      );
+      if (selection == null || selection.files.isEmpty) return;
+      final file = selection.files.single;
+      final bytes = file.bytes;
+      if (bytes == null || bytes.isEmpty) {
+        throw Exception('Không đọc được nội dung tệp trên thiết bị.');
+      }
+      if (bytes.length > 10 * 1024 * 1024) {
+        throw Exception('Tệp vượt quá giới hạn 10 MB.');
+      }
+
+      setState(() {
+        _uploading = true;
+        _error = null;
+      });
+      final request = http.MultipartRequest(
+        'POST',
+        _uri('/api/v1/knowledge/documents', {
+          'source': 'android_upload',
+          'title': file.name.replaceFirst(RegExp(r'\.[^.]+$'), ''),
+        }),
+      );
+      request.files.add(http.MultipartFile.fromBytes(
+        'file',
+        bytes,
+        filename: file.name,
+      ));
+      final streamed = await request.send().timeout(const Duration(seconds: 60));
+      final response = await http.Response.fromStream(streamed);
+      if (response.statusCode == 409) {
+        throw Exception('Tài liệu này đã được nhập trước đó (trùng nội dung).');
+      }
+      if (response.statusCode != 201) {
+        var detail = response.body;
+        try {
+          final payload = jsonDecode(response.body);
+          detail = payload is Map ? (payload['detail'] ?? payload).toString() : detail;
+        } catch (_) {
+          // Keep the raw backend response when it is not JSON.
+        }
+        throw Exception('HTTP ${response.statusCode}: $detail');
+      }
+      if (!mounted) return;
+      final payload = jsonDecode(response.body) as Map<String, dynamic>;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Đã nhập "${payload['title'] ?? file.name}" vào kho tri thức.')),
+      );
+      await _loadDocuments();
+    } catch (error) {
+      if (mounted) setState(() => _error = 'Không nhập được tài liệu: $error');
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  Future<void> _deleteDocument(Map<String, dynamic> document) async {
+    final id = document['id'];
+    final title = document['title']?.toString() ?? document['filename']?.toString() ?? 'tài liệu';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Xóa tài liệu?'),
+        content: Text('Xóa "$title" khỏi kho tri thức? Các đoạn trích và chỉ mục liên quan cũng sẽ bị xóa.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Xóa'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || id is! int) return;
+    try {
+      final response = await http.delete(
+        _uri('/api/v1/knowledge/documents/$id'),
+      ).timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200) {
+        throw Exception('Backend trả về HTTP ${response.statusCode}');
+      }
+      if (!mounted) return;
+      setState(() {
+        _documents.removeWhere((item) => item is Map && item['id'] == id);
+        _results.removeWhere((item) => item is Map && item['document_id'] == id);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã xóa tài liệu khỏi kho tri thức.')),
+      );
+    } catch (error) {
+      if (mounted) setState(() => _error = 'Không xóa được tài liệu: $error');
+    }
+  }
 
   Future<void> _search() async {
     final query = _queryController.text.trim();
@@ -35,10 +169,9 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       _searched = true;
     });
     try {
-      final uri = Uri.parse(
-        '${widget.baseUrl}/api/v1/knowledge/search',
-      ).replace(queryParameters: {'q': query, 'top_k': '8'});
-      final response = await http.get(uri).timeout(const Duration(seconds: 20));
+      final response = await http.get(
+        _uri('/api/v1/knowledge/search', {'q': query, 'top_k': '8'}),
+      ).timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
         throw Exception('Backend trả về HTTP ${response.statusCode}: ${response.body}');
       }
@@ -53,6 +186,12 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDocuments();
   }
 
   @override
@@ -74,10 +213,8 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              title == null || title.isEmpty ? filename : title,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            Text(title == null || title.isEmpty ? filename : title,
+                style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 5),
             Text('Nguồn: $source • Điểm khớp: ${score is num ? score.toStringAsFixed(3) : '—'}'),
             const SizedBox(height: 8),
@@ -88,13 +225,10 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                 const Icon(Icons.link, size: 16),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: SelectableText(
-                    citation,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  child: SelectableText(citation, style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  )),
                 ),
                 IconButton(
                   tooltip: 'Sao chép mã trích dẫn',
@@ -114,6 +248,29 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     );
   }
 
+  Widget _documentCard(Map<String, dynamic> item) {
+    final title = item['title']?.toString() ?? item['filename']?.toString() ?? 'Tài liệu';
+    final size = item['size_bytes'];
+    final chunks = item['chunk_count'] ?? 0;
+    final created = item['created_at']?.toString();
+    return Card(
+      child: ListTile(
+        leading: const CircleAvatar(child: Icon(Icons.description_outlined)),
+        title: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
+        subtitle: Text(
+          '${item['filename'] ?? ''} • $chunks đoạn • ${size is num ? (size / 1024).toStringAsFixed(1) : '—'} KB'
+          '${created == null ? '' : '\n$created'}',
+        ),
+        isThreeLine: true,
+        trailing: IconButton(
+          tooltip: 'Xóa tài liệu',
+          icon: const Icon(Icons.delete_outline),
+          onPressed: () => _deleteDocument(item),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final status = _context?['status']?.toString();
@@ -128,11 +285,53 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Text('Quản lý tài liệu', style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 6),
+                  const Text('Nhập tài liệu TXT, Markdown, CSV hoặc PDF có văn bản chọn được. Giới hạn 10 MB/tệp; PDF scan cần OCR nên chưa hỗ trợ.'),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _uploading ? null : _pickAndUpload,
+                      icon: _uploading
+                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.upload_file),
+                      label: Text(_uploading ? 'Đang nhập tài liệu...' : 'Chọn tài liệu từ điện thoại'),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(child: Text('Đã lưu: ${_documents.length} tài liệu')),
+                      IconButton(
+                        tooltip: 'Làm mới danh sách',
+                        onPressed: _documentsLoading ? null : _loadDocuments,
+                        icon: const Icon(Icons.refresh),
+                      ),
+                    ],
+                  ),
+                  if (_documentsLoading) const LinearProgressIndicator(),
+                ],
+              ),
+            ),
+          ),
+          if (_documents.isEmpty && !_documentsLoading)
+            const Card(child: Padding(
+              padding: EdgeInsets.all(14),
+              child: Text('Kho tri thức chưa có tài liệu. Hãy chọn tệp để bắt đầu.'),
+            ))
+          else
+            ..._documents.whereType<Map<String, dynamic>>().map(_documentCard),
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text('Tra cứu kho tri thức', style: Theme.of(context).textTheme.titleLarge),
                   const SizedBox(height: 6),
-                  const Text(
-                    'Tìm kiếm cục bộ trong tài liệu đã nhập. Kết quả là đoạn trích có nguồn, chưa phải câu trả lời do AI tổng hợp.',
-                  ),
+                  const Text('Tìm kiếm cục bộ trong tài liệu đã nhập. Kết quả là đoạn trích có nguồn, chưa phải câu trả lời do AI tổng hợp.'),
                   const SizedBox(height: 12),
                   TextField(
                     controller: _queryController,
@@ -159,53 +358,41 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
           ),
           if (_loading) const LinearProgressIndicator(),
           if (_error != null)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-              ),
-            ),
+            Card(child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            )),
           if (_searched && !_loading && _error == null) ...[
             const SizedBox(height: 12),
             Text(
-              status == 'ready'
-                  ? 'Tìm thấy ${_results.length} đoạn tài liệu'
-                  : 'Chưa tìm thấy bằng chứng phù hợp',
+              status == 'ready' ? 'Tìm thấy ${_results.length} đoạn tài liệu' : 'Chưa tìm thấy bằng chứng phù hợp',
               style: Theme.of(context).textTheme.titleMedium,
             ),
             if (_results.isEmpty)
-              const Card(
-                child: Padding(
-                  padding: EdgeInsets.all(14),
-                  child: Text('Kho tri thức chưa có đoạn phù hợp. Hãy kiểm tra tài liệu đã được nhập vào backend.'),
-                ),
-              )
+              const Card(child: Padding(
+                padding: EdgeInsets.all(14),
+                child: Text('Không có đoạn phù hợp với từ khóa.'),
+              ))
             else
               ..._results.whereType<Map<String, dynamic>>().map(_resultCard),
             if (_context != null)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Kiểm soát ngữ cảnh', style: TextStyle(fontWeight: FontWeight.w600)),
-                      Text('Phương pháp: ${_context!['retrieval_method'] ?? '—'}'),
-                      Text('Ký tự đưa vào ngữ cảnh: ${_context!['characters_used'] ?? 0}'),
-                      Text('Trích dẫn hợp lệ: ${(_context!['citations'] as List<dynamic>? ?? const []).length}'),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'Nội dung tài liệu được xem là bằng chứng không đáng tin cậy, không được phép ghi đè quy tắc hệ thống.',
-                      ),
-                    ],
-                  ),
+              Card(child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Kiểm soát ngữ cảnh', style: TextStyle(fontWeight: FontWeight.w600)),
+                    Text('Phương pháp: ${_context!['retrieval_method'] ?? '—'}'),
+                    Text('Ký tự đưa vào ngữ cảnh: ${_context!['characters_used'] ?? 0}'),
+                    Text('Trích dẫn hợp lệ: ${(_context!['citations'] as List<dynamic>? ?? const []).length}'),
+                    const SizedBox(height: 6),
+                    const Text('Nội dung tài liệu được xem là bằng chứng không đáng tin cậy, không được phép ghi đè quy tắc hệ thống.'),
+                  ],
                 ),
-              ),
+              )),
           ],
           const SizedBox(height: 12),
-          const Text(
-            'Giai đoạn hiện tại dùng BM25-style lexical retrieval miễn phí, chạy cục bộ trên backend. Chưa bật embedding, mô hình sinh câu trả lời hay API AI trả phí.',
-          ),
+          const Text('Tìm kiếm hiện dùng BM25-style lexical retrieval miễn phí trên backend. Chưa bật embedding, mô hình sinh câu trả lời hay API AI trả phí.'),
         ],
       ),
     );
