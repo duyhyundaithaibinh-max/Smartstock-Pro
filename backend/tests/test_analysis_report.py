@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from app.analysis_report import build_analysis_report
 
@@ -47,17 +48,22 @@ class AnalysisReportTests(unittest.TestCase):
             "elliott": {"lookback": 60, "wing": 1},
             "volume_flow": {"window": 12},
         }
-        result = build_analysis_report(
-            self.make_candles(),
-            rule_config=config,
-            rule_version="2.1.0",
-            rule_config_sha256="a" * 64,
-        )
+        with patch(
+            "app.analysis_report.fibonacci.analyze_fibonacci",
+            return_value={"status": "ok", "method": {"lookback_bars": 40, "pivot_wing": 1}},
+        ) as fibonacci_mock:
+            result = build_analysis_report(
+                self.make_candles(),
+                rule_config=config,
+                rule_version="2.1.0",
+                rule_config_sha256="a" * 64,
+            )
         self.assertEqual(result["analysis_rules_version"], "2.1.0")
         self.assertEqual(result["analysis_rule_config_sha256"], "a" * 64)
-        self.assertEqual(result["fibonacci"]["method"]["lookback_bars"], 40)
-        self.assertEqual(result["fibonacci"]["method"]["pivot_wing"], 1)
         self.assertEqual(result["volume_flow"]["window"], 12)
+        self.assertEqual(fibonacci_mock.call_args.kwargs["lookback"], 40)
+        self.assertEqual(fibonacci_mock.call_args.kwargs["wing"], 1)
+
 
 
 if __name__ == "__main__":
