@@ -31,8 +31,8 @@ Agent xử lý **một mục mỗi lượt chạy**, theo thứ tự ưu tiên. 
 
 ### P2 — Hybrid AI và kiểm soát chất lượng
 
-- [ ] **SP-011 — Model adapter độc lập nhà cung cấp.** Đang triển khai nền tảng `ModelAdapter`/`ModelGateway`: mặc định tắt, không có SDK hay kết nối mạng; chọn adapter qua cấu hình, kiểm tra ngân sách dự kiến, timeout và cô lập lỗi. Cần CI xác nhận trước khi đánh dấu hoàn thành.
-- [ ] **SP-012 — AI chỉ diễn giải kết quả engine.** Không để mô hình tự bịa giá, volume, chỉ báo hoặc dữ liệu chưa có.
+- [x] **SP-011 — Model adapter độc lập nhà cung cấp.** Đã có `ModelAdapter`/`ModelGateway`, mặc định tắt, không có SDK hay kết nối mạng; chọn adapter qua cấu hình, kiểm tra ngân sách dự kiến, timeout và cô lập lỗi. Unit tests và CI backend/Android pass tại run 42390403719.
+- [ ] **SP-012 — AI chỉ diễn giải kết quả engine.** Đã thêm `interpretation_guard`: tạo allow-list facts từ báo cáo xác định, buộc từng nhận định trích evidence ID hợp lệ, từ chối số liệu tự do trong văn bản AI; chưa kết nối model. Chờ CI xác nhận.
 - [ ] **SP-013 — Bộ đánh giá chất lượng phân tích.** Golden test, kiểm tra tính nhất quán, kiểm thử hồi quy và lưu phiên bản quy tắc.
 
 ### P3 — Giai đoạn 2: Hybrid AI Training Room
