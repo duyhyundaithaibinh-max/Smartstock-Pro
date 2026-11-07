@@ -59,6 +59,7 @@ def test_interpretation_packet_matches_engine_facts_exactly(synthetic_candles):
     context = build_interpretation_context(report)
     facts = context["facts"]
 
+    assert facts["report.rules_version"]["value"] == report["analysis_rules_version"]
     assert facts["report.as_of"]["value"] == report["as_of"]
     assert facts["report.bars_available"]["value"] == report["bars_available"]
     assert facts["market.latest_close"]["value"] == report["latest_close"]
@@ -69,6 +70,9 @@ def test_interpretation_packet_matches_engine_facts_exactly(synthetic_candles):
             assert fact is None
         else:
             assert fact["value"] == expected
+    assert facts["data.price_adjustment"]["value"] == "unknown"
+    assert facts["data.source.0"]["value"] == "unit-test-synthetic"
+    assert facts["data.source.0"]["source_path"] == "data_quality.sources[0]"
     assert set(context["allowed_evidence_ids"]) == set(facts)
 
 
@@ -85,3 +89,27 @@ def test_report_handles_short_history_without_fabricating_bars(synthetic_candles
 def test_empty_history_is_rejected():
     with pytest.raises(ValueError, match="At least one candle"):
         build_analysis_report([])
+
+
+def test_missing_indicator_and_provenance_are_not_fabricated(synthetic_candles):
+    report = build_analysis_report(synthetic_candles[:8])
+    context = build_interpretation_context(report)
+    facts = context["facts"]
+
+    assert "indicator.ema50" not in facts
+    assert "indicator.rsi14" not in facts
+    assert facts["report.bars_available"]["value"] == 8
+    assert facts["data.price_adjustment"]["value"] == "unknown"
+    assert facts["data.source.0"]["value"] == "unit-test-synthetic"
+
+
+def test_multiple_sources_are_preserved_as_distinct_evidence(synthetic_candles):
+    candles = [dict(item) for item in synthetic_candles]
+    candles[0]["source"] = "provider-a"
+    candles[-1]["source"] = "provider-b"
+    report = build_analysis_report(candles)
+    context = build_interpretation_context(report)
+
+    assert report["data_quality"]["sources"] == ["provider-a", "provider-b"]
+    assert context["facts"]["data.source.0"]["value"] == "provider-a"
+    assert context["facts"]["data.source.1"]["value"] == "provider-b"
