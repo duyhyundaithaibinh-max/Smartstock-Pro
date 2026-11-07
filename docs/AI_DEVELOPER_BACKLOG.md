@@ -37,7 +37,7 @@ Agent xử lý **một mục mỗi lượt chạy**, theo thứ tự ưu tiên. 
 
 ### P3 — Giai đoạn 2: Hybrid AI Training Room
 
-- [ ] **SP-014 — Nhập tài liệu và quản lý knowledge base.**
+- [ ] **SP-014 — Nhập tài liệu và quản lý knowledge base.** (Đã triển khai phần đầu trên nhánh PR #3, chờ CI xác nhận): API nhập TXT/Markdown/CSV/PDF dạng văn bản; trích xuất PDF bằng pypdf; SQLite metadata/chunks; SHA-256 chống nhập trùng; phân đoạn xác định 1.200 ký tự/overlap 150; list/detail/delete; giới hạn file 10 MB và văn bản trích xuất 2 triệu ký tự. PDF scan cần OCR bị từ chối rõ ràng. Chưa có embedding/RAG (SP-015).
 - [ ] **SP-015 — RAG có trích dẫn nguồn và phân quyền dữ liệu.**
 - [ ] **SP-016 — Quy tắc phân tích có phiên bản và lịch sử thay đổi.**
 - [ ] **SP-017 — Bộ đánh giá, so sánh phiên bản và cải thiện quy tắc.**
