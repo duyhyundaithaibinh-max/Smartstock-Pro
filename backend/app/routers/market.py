@@ -352,14 +352,15 @@ def get_analysis_report(
     if not candles:
         raise HTTPException(404, "No candle data found")
     try:
+        active_rules = rule_registry.get_active_version()
         return {
             "symbol": symbol.upper(),
             "timeframe": timeframe,
             "report": analysis_report.build_analysis_report(
                 candles,
-                rule_config=rule_registry.get_active_version()["config"],
-                rule_version=rule_registry.get_active_version()["version"],
-                rule_config_sha256=rule_registry.get_active_version()["config_sha256"],
+                rule_config=active_rules["config"],
+                rule_version=active_rules["version"],
+                rule_config_sha256=active_rules["config_sha256"],
             ),
         }
     except ValueError as exc:
