@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'stock_detail_page.dart';
+import 'analysis_page.dart';
 
 class ChartPage extends StatefulWidget {
   const ChartPage({super.key, required this.baseUrl, required this.symbol});
@@ -83,6 +84,18 @@ class _ChartPageState extends State<ChartPage> {
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => StockDetailPage(
+                  baseUrl: widget.baseUrl,
+                  symbol: widget.symbol,
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Kịch bản phân tích',
+            icon: const Icon(Icons.insights_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => AnalysisPage(
                   baseUrl: widget.baseUrl,
                   symbol: widget.symbol,
                 ),
