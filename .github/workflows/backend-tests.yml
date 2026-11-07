@@ -1,8 +1,10 @@
 name: SmartStock Pro CI
 on:
   push:
+    branches: [main]
     paths: ["backend/**", "mobile/**", "docker-compose.yml", ".github/workflows/**"]
   pull_request:
+    branches: [main]
     paths: ["backend/**", "mobile/**", "docker-compose.yml", ".github/workflows/**"]
 jobs:
   backend:
