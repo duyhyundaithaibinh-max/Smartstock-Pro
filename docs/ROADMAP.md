@@ -1,20 +1,23 @@
 # Roadmap triển khai
 
-## Đã triển khai trong backend MVP
-- [x] FastAPI service, health endpoint.
-- [x] SQLite schema cho mã và OHLCV, lưu provenance.
-- [x] API tạo/tìm mã theo sàn.
-- [x] CSV OHLCV import với kiểm tra định dạng và quan hệ OHLC.
-- [x] SMA, EMA, RSI, MACD, ATR, OBV.
-- [x] Unit tests và CI workflow.
+## Đã có
+- [x] FastAPI và health check.
+- [x] SQLite cho mã và OHLCV, có nguồn dữ liệu.
+- [x] Quản lý mã theo HOSE/HNX/UPCoM.
+- [x] CSV import và kiểm tra OHLC.
+- [x] SMA, EMA, RSI, MACD, ATR Wilder, OBV.
+- [x] Bollinger Bands, cumulative VWAP, Stochastic, Volume Profile.
+- [x] Unit tests, GitHub Actions.
+- [x] Docker backend và Flutter dashboard skeleton.
 
-## Tiếp theo
-1. Adapter nhà cung cấp dữ liệu được cấp phép; đồng bộ tăng dần và retry.
-2. Chuẩn hóa lịch giao dịch, corporate actions và dữ liệu điều chỉnh.
-3. Mở rộng phân tích: Bollinger, stochastic, ADX, VWAP, Volume Profile.
-4. Backtest có phí, trượt giá, survivorship-bias controls và walk-forward.
-5. AI Training Room: tài liệu, versioning, RAG và bộ đánh giá.
-6. Flutter Android: watchlist, chart, phân tích, danh mục.
-7. Đóng gói Docker/backend và Android APK sau khi hoàn tất kiểm thử.
+## Còn phải hoàn thiện trước bản đóng gói phát hành
+1. Chạy CI xanh trên commit cuối và kiểm thử tích hợp API/CSV.
+2. Bổ sung data provider adapter hợp pháp, đồng bộ lịch sử/tự động, retry và lịch giao dịch.
+3. Corporate actions, dữ liệu điều chỉnh và kiểm định dữ liệu.
+4. Phân tích cấu trúc giá: swing/pivot, Fibonacci, Elliott có giải thích và mức độ tin cậy.
+5. Backtest với phí, trượt giá, survivorship bias và walk-forward.
+6. AI Training Room: tài liệu, versioning, RAG, đánh giá.
+7. Flutter chart, watchlist, danh mục và cấu hình API an toàn.
+8. Build Android APK, Docker image; kiểm thử cài đặt và hướng dẫn vận hành.
 
-Không coi dữ liệu CSV do người dùng nhập là nguồn dữ liệu thị trường tự động.
+Không coi skeleton hiện tại là bản hoàn chỉnh hay khuyến nghị đầu tư.

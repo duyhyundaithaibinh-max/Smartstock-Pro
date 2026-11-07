@@ -1,0 +1,14 @@
+services:
+  api:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      SMARTSTOCK_DB_PATH: /data/smartstock.db
+    volumes:
+      - smartstock_data:/data
+    restart: unless-stopped
+
+volumes:
+  smartstock_data:
