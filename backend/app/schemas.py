@@ -30,7 +30,7 @@ class Candle(BaseModel):
     @field_validator("timestamp", mode="before")
     @classmethod
     def normalize_timestamp(cls, value):
-        if isinstance(value, str) and re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", value):
+        if isinstance(value, str) and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
             # Daily CSV dates are exchange-local calendar dates, not UTC instants.
             value = datetime.fromisoformat(value).replace(tzinfo=VIETNAM_TZ)
         elif isinstance(value, datetime) and value.tzinfo is None:
