@@ -28,9 +28,15 @@ def build_interpretation_context(report: Mapping[str, Any]) -> dict[str, Any]:
         if value is not None and isinstance(value, (str, int, float, bool)):
             facts[evidence_id] = {"value": value, "source_path": source_path}
 
+    add("report.rules_version", report.get("analysis_rules_version"), "analysis_rules_version")
     add("report.as_of", report.get("as_of"), "as_of")
     add("report.bars_available", report.get("bars_available"), "bars_available")
     add("market.latest_close", report.get("latest_close"), "latest_close")
+
+    data_quality = report.get("data_quality") or {}
+    add("data.price_adjustment", data_quality.get("price_adjustment"), "data_quality.price_adjustment")
+    for index, source in enumerate(data_quality.get("sources") or []):
+        add(f"data.source.{index}", source, f"data_quality.sources[{index}]")
 
     indicators = report.get("indicators") or {}
     for key in ("rsi14", "macd", "macd_signal", "ema20", "ema50", "atr14"):
