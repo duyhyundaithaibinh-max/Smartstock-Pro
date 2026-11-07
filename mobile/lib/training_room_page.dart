@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 /// Local knowledge retrieval UI. This screen displays source passages only;
@@ -98,8 +99,10 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                 IconButton(
                   tooltip: 'Sao chép mã trích dẫn',
                   onPressed: () {
-                    // Citation remains selectable; clipboard is intentionally
-                    // not required for this first MVP screen.
+                    Clipboard.setData(ClipboardData(text: citation));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Đã sao chép mã trích dẫn')),
+                    );
                   },
                   icon: const Icon(Icons.content_copy, size: 18),
                 ),
