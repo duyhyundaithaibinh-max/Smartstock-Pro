@@ -24,8 +24,8 @@ Agent xử lý **một mục mỗi lượt chạy**, theo thứ tự ưu tiên. 
 
 ### P1 — Android MVP
 
-- [ ] **SP-007 — Danh sách theo dõi.** Thêm watchlist có lưu trữ bền vững, sắp xếp và trạng thái dữ liệu.
-- [ ] **SP-008 — Biểu đồ giá và khối lượng.** Biểu đồ OHLCV theo ngày/tuần/tháng, không hiển thị giá nếu backend chưa có dữ liệu.
+- [ ] **SP-007 — Danh sách theo dõi.** Đã bổ sung SQLite watchlist, API GET/POST/DELETE/sắp xếp và unit tests; chờ CI xác nhận trước khi đánh dấu hoàn tất.
+- [ ] **SP-008 — Biểu đồ giá và khối lượng.** Đã bổ sung API `/api/v1/candles/chart` và engine tổng hợp OHLCV ngày/tuần/tháng từ nến ngày, giữ nguồn dữ liệu và không tự lấp phiên thiếu; unit tests đã thêm. Phần biểu đồ Flutter và CI còn chờ.
 - [ ] **SP-009 — Trang chi tiết mã.** Hiển thị chỉ báo, vùng hỗ trợ/kháng cự, thanh khoản và nguồn/thời điểm dữ liệu.
 - [ ] **SP-010 — Giao diện AI Analysis.** Hiển thị ba kịch bản, điều kiện xác nhận/vô hiệu, bằng chứng và cảnh báo dữ liệu thiếu.
 
