@@ -24,8 +24,8 @@ Agent xử lý **một mục mỗi lượt chạy**, theo thứ tự ưu tiên. 
 
 ### P1 — Android MVP
 
-- [ ] **SP-007 — Danh sách theo dõi.** Đã bổ sung SQLite watchlist, API GET/POST/DELETE/sắp xếp và unit tests; chờ CI xác nhận trước khi đánh dấu hoàn tất.
-- [ ] **SP-008 — Biểu đồ giá và khối lượng.** Đã bổ sung API `/api/v1/candles/chart` và engine tổng hợp OHLCV ngày/tuần/tháng từ nến ngày, giữ nguồn dữ liệu và không tự lấp phiên thiếu; unit tests đã thêm. Phần biểu đồ Flutter và CI còn chờ.
+- [x] **SP-007 — Danh sách theo dõi.** SQLite watchlist, API GET/POST/DELETE/sắp xếp và unit tests; backend CI đã pass trong run 42388931745.
+- [x] **SP-008 — Biểu đồ giá và khối lượng.** API `/api/v1/candles/chart`, engine tổng hợp OHLCV ngày/tuần/tháng, màn hình Flutter biểu đồ nến/khối lượng; backend tests, Flutter analyze/tests và build debug APK đều pass trong run 42388931745.
 - [ ] **SP-009 — Trang chi tiết mã.** Đã thêm engine `stock_detail`, API `/api/v1/symbols/{symbol}/detail` và màn hình Flutter gồm RSI/MACD/EMA/ATR, xu hướng, hỗ trợ/kháng cự, thanh khoản ước tính, nguồn/thời điểm dữ liệu; unit tests đã thêm. Chờ CI xác nhận.
 - [ ] **SP-010 — Giao diện AI Analysis.** Hiển thị ba kịch bản, điều kiện xác nhận/vô hiệu, bằng chứng và cảnh báo dữ liệu thiếu.
 
