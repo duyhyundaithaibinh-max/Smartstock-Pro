@@ -46,8 +46,12 @@ jobs:
             find "$SDK_ROOT" -maxdepth 4 -type f -name sdkmanager -print || true
             exit 1
           fi
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
-          yes | "$SDKMANAGER" "platforms;android-36"
+          # sdkmanager closes stdin after accepting licenses; with pipefail, yes may exit 141
+          # (SIGPIPE) even when sdkmanager succeeds. Keep the command's exit status authoritative.
+          set +o pipefail
+          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null
+          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platforms;android-36"
+          set -o pipefail
           sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' android/app/build.gradle.kts
       - name: Resolve Flutter dependencies
         working-directory: mobile
