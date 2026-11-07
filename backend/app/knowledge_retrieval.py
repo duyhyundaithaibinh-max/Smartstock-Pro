@@ -6,7 +6,6 @@ embedding model. Retrieved document text is untrusted evidence, never policy.
 from __future__ import annotations
 
 import math
-import re
 from collections import Counter
 from typing import Any
 
@@ -19,7 +18,17 @@ _B = 0.75
 
 def tokenize(text: str) -> list[str]:
     """Normalize Unicode words while preserving Vietnamese diacritics."""
-    return [item.casefold() for item in _TOKEN.findall(text)]
+    tokens = []
+    current = []
+    for character in text:
+        if character.isalnum():
+            current.append(character)
+        elif current:
+            tokens.append("".join(current).casefold())
+            current = []
+    if current:
+        tokens.append("".join(current).casefold())
+    return tokens
 
 
 def search_knowledge(query: str, top_k: int = 5) -> dict[str, Any]:
