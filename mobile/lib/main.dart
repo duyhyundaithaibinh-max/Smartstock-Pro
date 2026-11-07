@@ -38,9 +38,10 @@ class _DashboardPageState extends State<DashboardPage> {
       final response = await http.get(Uri.parse('$base/health')).timeout(const Duration(seconds: 8));
       if (response.statusCode != 200) throw Exception('API trả về HTTP ${response.statusCode}');
       final health = jsonDecode(response.body) as Map<String, dynamic>;
-      final symbolsResponse = await http.get(Uri.parse('$base/api/v1/symbols')).timeout(const Duration(seconds: 8));
-      if (symbolsResponse.statusCode != 200) throw Exception('Không tải được danh sách mã');
-      setState(() { _health = health; _symbols = jsonDecode(symbolsResponse.body) as List<dynamic>; });
+      final symbolsResponse = await http.get(Uri.parse('$base/api/v1/watchlist')).timeout(const Duration(seconds: 8));
+      if (symbolsResponse.statusCode != 200) throw Exception('Không tải được danh sách theo dõi');
+      final watchlistPayload = jsonDecode(symbolsResponse.body) as Map<String, dynamic>;
+      setState(() { _health = health; _symbols = watchlistPayload['items'] as List<dynamic>? ?? []; });
     } catch (e) {
       setState(() { _health = null; _error = 'Không kết nối được backend: $e'; });
     } finally {
@@ -83,8 +84,22 @@ class _DashboardPageState extends State<DashboardPage> {
           else ..._symbols.map((item) => Card(child: ListTile(
             leading: CircleAvatar(child: Text((item['symbol'] as String).substring(0, 1))),
             title: Text(item['symbol'] as String),
-            subtitle: Text('${item['name']} • ${item['exchange']}'),
+            subtitle: Text('${item['name']} • ${item['exchange']} • ${item['candle_count']} nến'),
             trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              final base = _urlController.text.trim().replaceAll(RegExp(r'/
+          const SizedBox(height: 16),
+          const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('SmartStock Pro đang ở giai đoạn MVP. Dữ liệu chỉ hiển thị khi được nhập từ nguồn hợp pháp; chưa có dữ liệu thị trường mẫu hoặc tín hiệu mua/bán tự động.'))),
+        ]),
+      ),
+    );
+  }
+}
+), '');
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => ChartPage(baseUrl: base, symbol: item['symbol'] as String),
+              ));
+            },
           ))),
           const SizedBox(height: 16),
           const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('SmartStock Pro đang ở giai đoạn MVP. Dữ liệu chỉ hiển thị khi được nhập từ nguồn hợp pháp; chưa có dữ liệu thị trường mẫu hoặc tín hiệu mua/bán tự động.'))),
