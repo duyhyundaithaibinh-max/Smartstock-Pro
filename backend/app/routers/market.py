@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Body
 from pydantic import ValidationError
 from ..db import connection
 from ..schemas import SymbolCreate, Candle
-from .. import indicators, price_action, fibonacci, elliott, volume_flow, analysis_report, watchlist, chart_data, stock_detail, knowledge_base
+from .. import indicators, price_action, fibonacci, elliott, volume_flow, analysis_report, watchlist, chart_data, stock_detail, knowledge_base, knowledge_retrieval
 
 router = APIRouter(prefix="/api/v1", tags=["market"])
 EXCHANGES = [
@@ -444,3 +444,17 @@ def delete_knowledge_document(document_id: int):
     if not knowledge_base.delete_document(document_id):
         raise HTTPException(404, "Knowledge document not found")
     return {"document_id": document_id, "status": "deleted"}
+
+
+@router.get("/knowledge/search")
+def search_knowledge_documents(
+    q: str = Query(min_length=1, max_length=500),
+    top_k: int = Query(5, ge=1, le=20),
+):
+    """Retrieve local knowledge chunks with stable source citations."""
+    try:
+        result = knowledge_retrieval.search_knowledge(q, top_k=top_k)
+        result["retrieval_context"] = knowledge_retrieval.build_retrieval_context(result)
+        return result
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
