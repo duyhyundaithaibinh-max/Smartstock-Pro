@@ -105,7 +105,8 @@ def test_missing_indicator_and_provenance_are_not_fabricated(synthetic_candles):
 
 def test_multiple_sources_are_preserved_as_distinct_evidence(synthetic_candles):
     candles = [dict(item) for item in synthetic_candles]
-    candles[0]["source"] = "provider-a"
+    for candle in candles:
+        candle["source"] = "provider-a"
     candles[-1]["source"] = "provider-b"
     report = build_analysis_report(candles)
     context = build_interpretation_context(report)
