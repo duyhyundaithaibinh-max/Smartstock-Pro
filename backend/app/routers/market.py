@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from pydantic import ValidationError
 from ..db import connection
 from ..schemas import SymbolCreate, Candle
-from .. import indicators, price_action
+from .. import indicators, price_action, fibonacci
 
 router = APIRouter(prefix="/api/v1", tags=["market"])
 EXCHANGES = [
@@ -192,3 +192,34 @@ def get_price_action_analysis(
         }
     except ValueError as exc:
         raise HTTPException(422, f"Unable to analyze OHLCV: {exc}") from exc
+
+
+@router.get("/analysis/fibonacci")
+def get_fibonacci_analysis(
+    symbol: str,
+    timeframe: str = "1d",
+    limit: int = Query(500, ge=1, le=5000),
+    lookback: int = Query(250, ge=10, le=5000),
+    wing: int = Query(2, ge=1, le=10),
+):
+    """Deterministic Fibonacci price/time projections from confirmed OHLCV pivots."""
+    candles = get_candles(symbol, timeframe, limit)
+    if not candles:
+        raise HTTPException(404, "No candle data found")
+    try:
+        analysis = fibonacci.analyze_fibonacci(
+            [c["high"] for c in candles],
+            [c["low"] for c in candles],
+            [c["close"] for c in candles],
+            timestamps=[c["timestamp"] for c in candles],
+            lookback=lookback,
+            wing=wing,
+        )
+        return {
+            "symbol": symbol.upper(),
+            "timeframe": timeframe,
+            "data_source": sorted({c["source"] for c in candles}),
+            "analysis": analysis,
+        }
+    except ValueError as exc:
+        raise HTTPException(422, f"Unable to calculate Fibonacci levels: {exc}") from exc
