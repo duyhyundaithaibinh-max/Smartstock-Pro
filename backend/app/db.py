@@ -54,4 +54,10 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_candles_symbol_time
             ON candles(symbol, timeframe, timestamp);
+        CREATE TABLE IF NOT EXISTS watchlist (
+            symbol TEXT PRIMARY KEY,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(symbol) REFERENCES symbols(symbol) ON DELETE CASCADE
+        );
         """)
