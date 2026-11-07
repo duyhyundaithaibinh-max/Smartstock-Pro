@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from pydantic import ValidationError
 from ..db import connection
 from ..schemas import SymbolCreate, Candle
-from .. import indicators
+from .. import indicators, price_action
 
 router = APIRouter(prefix="/api/v1", tags=["market"])
 EXCHANGES = [
@@ -164,3 +164,31 @@ def get_indicators(symbol: str, timeframe: str = "1d", limit: int = Query(500, g
         "data_source": sorted({c["source"] for c in candles}),
         "note": "Indicators use stored source candles. Verify corporate-action adjustments and timeframe-specific VWAP interpretation.",
     }
+
+
+
+@router.get("/analysis/price-action")
+def get_price_action_analysis(
+    symbol: str,
+    timeframe: str = "1d",
+    limit: int = Query(500, ge=1, le=5000),
+):
+    """Deterministic trend, support/resistance and breakout analysis from stored OHLCV."""
+    candles = get_candles(symbol, timeframe, limit)
+    if not candles:
+        raise HTTPException(404, "No candle data found")
+    try:
+        return {
+            "symbol": symbol.upper(),
+            "timeframe": timeframe,
+            "data_source": sorted({c["source"] for c in candles}),
+            "analysis": price_action.analyze_price_action(
+                [c["high"] for c in candles],
+                [c["low"] for c in candles],
+                [c["close"] for c in candles],
+                [c["volume"] for c in candles],
+                timestamps=[c["timestamp"] for c in candles],
+            ),
+        }
+    except ValueError as exc:
+        raise HTTPException(422, f"Unable to analyze OHLCV: {exc}") from exc
