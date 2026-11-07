@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'chart_page.dart';
+import 'training_room_page.dart';
 
 void main() => runApp(const SmartStockApp());
 
@@ -87,6 +88,14 @@ class _DashboardPageState extends State<DashboardPage> {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => ChartPage(baseUrl: _baseUrl, symbol: symbol),
+      ),
+    );
+  }
+
+  void _openTrainingRoom() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => TrainingRoomPage(baseUrl: _baseUrl),
       ),
     );
   }
@@ -201,6 +210,15 @@ class _DashboardPageState extends State<DashboardPage> {
                 );
               }),
             const SizedBox(height: 16),
+            Card(
+              child: ListTile(
+                leading: const CircleAvatar(child: Icon(Icons.school_outlined)),
+                title: const Text('Hybrid AI Training Room'),
+                subtitle: const Text('Tra cứu tài liệu và bằng chứng trong kho tri thức cục bộ'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _openTrainingRoom,
+              ),
+            ),
             const Card(
               child: Padding(
                 padding: EdgeInsets.all(16),
