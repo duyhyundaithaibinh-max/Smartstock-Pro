@@ -102,6 +102,8 @@ jobs:
         id: patch
         if: steps.guard.outputs.skip != 'true'
         run: |
+          # Include newly created (untracked) files in the patch without staging their contents.
+          git add -N .
           git diff --binary > smartstock-ai.patch
           if [ -s smartstock-ai.patch ]; then
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
