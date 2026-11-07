@@ -68,4 +68,4 @@ Nến tuần/tháng chỉ tổng hợp từ các phiên ngày có sẵn; hệ th
 - `POST /api/v1/analysis/rules` creates a draft using `{"version":"1.1.0","name":"EMA experiment","description":"Draft","config":{"trend":{"ema_fast":20}}}`.
 - `POST /api/v1/analysis/rules/1.1.0/activate` activates an existing version and archives the prior active version.
 - Versions use MAJOR.MINOR.PATCH, are append-only, and include a SHA-256 hash of canonical JSON configuration. Existing versions cannot be overwritten.
-- The built-in `1.0.0` record is metadata for the current baseline. This registry does not yet change the analysis engine's calculation parameters; wiring validated configuration into engine modules and permission controls remains follow-up work. Keep this distinction explicit.
+- The built-in `1.0.0` record preserves current defaults. Active configuration is applied by `/analysis/report` to Fibonacci lookback/pivot wing, Elliott lookback/pivot wing and volume-flow window; the report returns both rule version and configuration SHA-256. Price-action thresholds and indicator periods remain fixed defaults for now. API permission controls are not yet implemented.
