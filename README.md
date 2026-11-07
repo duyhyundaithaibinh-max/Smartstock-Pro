@@ -34,3 +34,13 @@ Header: `timestamp,open,high,low,close,volume`. Tạo mã qua `POST /api/v1/symb
 - Chỉ kết nối nguồn dữ liệu khi có API/quyền sử dụng hợp pháp.
 - Không công bố real-time nếu nhà cung cấp không cấp quyền tương ứng.
 - Xác minh điều chỉnh giá/corporate actions trước khi phân tích dài hạn.
+
+
+## Knowledge Base (SP-014)
+- Upload: `POST /api/v1/knowledge/documents?source=research-note` (multipart field `file`; optional `title`).
+- List: `GET /api/v1/knowledge/documents?limit=100&offset=0`.
+- Detail and chunks: `GET /api/v1/knowledge/documents/{id}`.
+- Delete: `DELETE /api/v1/knowledge/documents/{id}`.
+- Supported formats: UTF-8 TXT/Markdown/CSV and text-based PDF; scanned PDFs requiring OCR are rejected explicitly.
+- Local SQLite storage only; 10 MB upload cap, SHA-256 duplicate detection, deterministic 1,200-character chunks with 150-character overlap.
+- This step does not yet implement embeddings or RAG; those belong to SP-015.
