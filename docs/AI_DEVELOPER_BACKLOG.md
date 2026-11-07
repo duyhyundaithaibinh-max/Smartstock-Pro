@@ -20,7 +20,7 @@ Agent xử lý **một mục mỗi lượt chạy**, theo thứ tự ưu tiên. 
 - [x] **SP-003 — Fibonacci giá và thời gian.** Đã bổ sung engine xác định hai pivot trái dấu gần nhất đã xác nhận; tính retracement, extension và time projection theo số nến giao dịch; API `/api/v1/analysis/fibonacci`; trả điểm neo, timestamp, tham số pivot, phương pháp và giới hạn. Có unit tests.
 - [x] **SP-004 — Cấu trúc sóng Elliott dạng giả thuyết.** Đã bổ sung bộ đánh giá impulse 5 sóng từ sáu pivot luân phiên đã xác nhận; kiểm tra Wave 2, Wave 3, vùng chồng lấn Wave 4 và quy tắc Wave 3 không ngắn nhất; trả rule score, sóng, điều kiện xác nhận/vô hiệu và giới hạn. API `/api/v1/analysis/elliott`; có unit tests tăng/giảm và trường hợp vi phạm.
 - [x] **SP-005 — Dòng tiền và tín hiệu tích lũy/phân phối.** Đã bổ sung CMF, ADL, OBV, up/down volume ratio, phân kỳ giá-volume và co hẹp volume; phân loại ứng viên tích lũy/phân phối theo điều kiện minh bạch. API `/api/v1/analysis/volume-flow`; có unit tests và giới hạn rõ ràng do chỉ có OHLCV.
-- [ ] **SP-006 — API tổng hợp báo cáo phân tích.** Trả về dữ liệu đầu vào, chỉ báo, vùng giá, kịch bản tăng/cơ sở/giảm và giải thích bằng chứng.
+- [x] **SP-006 — API tổng hợp báo cáo phân tích.** Đã bổ sung engine tổng hợp price action, Fibonacci, Elliott, volume flow và chỉ báo; tạo ba kịch bản tăng/cơ sở/giảm với điều kiện xác nhận/vô hiệu, nguồn dữ liệu và trạng thái điều chỉnh giá. API `/api/v1/analysis/report`; có unit tests.
 
 ### P1 — Android MVP
 
