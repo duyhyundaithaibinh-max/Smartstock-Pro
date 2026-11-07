@@ -143,7 +143,6 @@ class _ChartPageState extends State<ChartPage> {
                             upColor: const Color(0xFF16865B),
                             downColor: const Color(0xFFD64A4A),
                             gridColor: theme.dividerColor,
-                            labelColor: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ),
@@ -193,14 +192,12 @@ class _OhlcvPainter extends CustomPainter {
     required this.upColor,
     required this.downColor,
     required this.gridColor,
-    required this.labelColor,
   });
 
   final List<Map<String, dynamic>> candles;
   final Color upColor;
   final Color downColor;
   final Color gridColor;
-  final Color labelColor;
 
   @override
   void paint(Canvas canvas, Size size) {
