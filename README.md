@@ -61,3 +61,11 @@ Nến tuần/tháng chỉ tổng hợp từ các phiên ngày có sẵn; hệ th
 - Each hit returns a stable citation ID (`kb:document_id:chunk_index`), source filename/title, source label, SHA-256 and character offsets.
 - The retrieval context is bounded to 12,000 characters and explicitly labels retrieved text as untrusted evidence; instructions embedded in source documents must not be followed.
 - Current retrieval is deterministic BM25-style lexical matching, not semantic/vector search. It does not call an LLM or external service. Embeddings, model-backed generation and user/role-level document permissions remain future work.
+
+## Versioned analysis rules (SP-016 — foundation)
+- `GET /api/v1/analysis/rules` lists immutable rule versions and activation history.
+- `GET /api/v1/analysis/rules/active` returns the active version and canonical JSON configuration.
+- `POST /api/v1/analysis/rules` creates a draft using `{"version":"1.1.0","name":"EMA experiment","description":"Draft","config":{"trend":{"ema_fast":20}}}`.
+- `POST /api/v1/analysis/rules/1.1.0/activate` activates an existing version and archives the prior active version.
+- Versions use MAJOR.MINOR.PATCH, are append-only, and include a SHA-256 hash of canonical JSON configuration. Existing versions cannot be overwritten.
+- The built-in `1.0.0` record is metadata for the current baseline. This registry does not yet change the analysis engine's calculation parameters; wiring validated configuration into engine modules and permission controls remains follow-up work. Keep this distinction explicit.
