@@ -355,7 +355,12 @@ def get_analysis_report(
         return {
             "symbol": symbol.upper(),
             "timeframe": timeframe,
-            "report": analysis_report.build_analysis_report(candles),
+            "report": analysis_report.build_analysis_report(
+                candles,
+                rule_config=rule_registry.get_active_version()["config"],
+                rule_version=rule_registry.get_active_version()["version"],
+                rule_config_sha256=rule_registry.get_active_version()["config_sha256"],
+            ),
         }
     except ValueError as exc:
         raise HTTPException(422, f"Unable to build analysis report: {exc}") from exc
