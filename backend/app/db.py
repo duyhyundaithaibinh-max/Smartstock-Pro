@@ -54,6 +54,30 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_candles_symbol_time
             ON candles(symbol, timeframe, timestamp);
+        CREATE TABLE IF NOT EXISTS knowledge_documents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename TEXT NOT NULL,
+            title TEXT NOT NULL,
+            mime_type TEXT NOT NULL,
+            source TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL CHECK(size_bytes > 0),
+            content_sha256 TEXT NOT NULL UNIQUE,
+            character_count INTEGER NOT NULL CHECK(character_count > 0),
+            chunk_count INTEGER NOT NULL CHECK(chunk_count > 0),
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS knowledge_chunks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            document_id INTEGER NOT NULL,
+            chunk_index INTEGER NOT NULL CHECK(chunk_index >= 0),
+            content TEXT NOT NULL,
+            char_start INTEGER NOT NULL CHECK(char_start >= 0),
+            char_end INTEGER NOT NULL CHECK(char_end > char_start),
+            UNIQUE(document_id, chunk_index),
+            FOREIGN KEY(document_id) REFERENCES knowledge_documents(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_document
+            ON knowledge_chunks(document_id, chunk_index);
         CREATE TABLE IF NOT EXISTS watchlist (
             symbol TEXT PRIMARY KEY,
             sort_order INTEGER NOT NULL DEFAULT 0,
