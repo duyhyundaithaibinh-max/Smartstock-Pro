@@ -1,11 +1,11 @@
 import csv
 import io
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Body
 from pydantic import ValidationError
 from ..db import connection
 from ..schemas import SymbolCreate, Candle
-from .. import indicators, price_action, fibonacci, elliott, volume_flow, analysis_report
+from .. import indicators, price_action, fibonacci, elliott, volume_flow, analysis_report, watchlist
 
 router = APIRouter(prefix="/api/v1", tags=["market"])
 EXCHANGES = [
@@ -305,3 +305,38 @@ def get_analysis_report(
         }
     except ValueError as exc:
         raise HTTPException(422, f"Unable to build analysis report: {exc}") from exc
+
+
+@router.get("/watchlist")
+def get_watchlist():
+    """Return locally persisted symbols in user-defined order."""
+    return {"items": watchlist.list_watchlist()}
+
+
+@router.post("/watchlist", status_code=201)
+def add_watchlist_symbol(symbol: str = Query(min_length=3, max_length=12, pattern=r"^[A-Za-z0-9.]+$")):
+    normalized, error = watchlist.add_symbol(symbol)
+    if error == "symbol_not_found":
+        raise HTTPException(404, "Create or import the symbol before adding it to the watchlist")
+    if error == "already_exists":
+        raise HTTPException(409, "Symbol is already in the watchlist")
+    return {"symbol": normalized, "status": "added"}
+
+
+@router.delete("/watchlist/{symbol}")
+def delete_watchlist_symbol(symbol: str):
+    if not watchlist.remove_symbol(symbol):
+        raise HTTPException(404, "Symbol is not in the watchlist")
+    return {"symbol": symbol.upper(), "status": "removed"}
+
+
+@router.put("/watchlist/order")
+def put_watchlist_order(symbols: list[str] = Body(..., min_length=0, max_length=500)):
+    if any(not item or len(item) > 12 for item in symbols):
+        raise HTTPException(422, "Each symbol must contain 1 to 12 characters")
+    success, error = watchlist.reorder_symbols(symbols)
+    if error == "duplicate_symbols":
+        raise HTTPException(422, "Order contains duplicate symbols")
+    if error == "must_include_exact_watchlist":
+        raise HTTPException(422, "Order must contain every current watchlist symbol exactly once")
+    return {"status": "updated", "symbols": [item.upper() for item in symbols]}
