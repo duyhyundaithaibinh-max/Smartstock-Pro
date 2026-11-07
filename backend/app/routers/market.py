@@ -507,7 +507,7 @@ def activate_analysis_rule_version(version: str):
 @router.get("/analysis/rules/compare")
 def compare_analysis_rule_versions(
     symbol: str,
-    versions: str = Query(min_length=7, max_length=100),
+    versions: str = Query(min_length=5, max_length=100),
     timeframe: str = Query("1d", min_length=2, max_length=8),
     limit: int = Query(500, ge=20, le=5000),
 ):
