@@ -38,7 +38,7 @@ Agent xử lý **một mục mỗi lượt chạy**, theo thứ tự ưu tiên. 
 ### P3 — Giai đoạn 2: Hybrid AI Training Room
 
 - [x] **SP-014 — Nhập tài liệu và quản lý knowledge base.** API nhập TXT/Markdown/CSV/PDF dạng văn bản; trích xuất PDF bằng pypdf; SQLite metadata/chunks; SHA-256 chống nhập trùng; phân đoạn xác định 1.200 ký tự/overlap 150; list/detail/delete; giới hạn file 10 MB và văn bản trích xuất 2 triệu ký tự. PDF scan cần OCR bị từ chối rõ ràng. Backend unit tests pass tại CI run 42396336569; kiểm tra Android của PR đang tiếp tục. Chưa có embedding/RAG (SP-015).
-- [ ] **SP-015 — RAG có trích dẫn nguồn và phân quyền dữ liệu.**
+- [ ] **SP-015 — RAG có trích dẫn nguồn và phân quyền dữ liệu (đang triển khai).** Đã có lớp truy xuất từ khóa BM25-style chạy local, xếp hạng chunk xác định, citation ID ổn định `kb:document_id:chunk_index`, metadata nguồn/SHA-256/vị trí ký tự và retrieval context giới hạn 12.000 ký tự. Nội dung tài liệu được đánh dấu là dữ liệu không đáng tin cậy, không phải chỉ thị. API `GET /api/v1/knowledge/search`. Chưa có embedding/semantic search, LLM generation hoặc phân quyền người dùng/nhóm; không gọi dịch vụ trả phí.
 - [ ] **SP-016 — Quy tắc phân tích có phiên bản và lịch sử thay đổi.**
 - [ ] **SP-017 — Bộ đánh giá, so sánh phiên bản và cải thiện quy tắc.**
 
