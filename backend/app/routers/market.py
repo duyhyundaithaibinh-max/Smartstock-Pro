@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Body
 from pydantic import ValidationError
 from ..db import connection
 from ..schemas import SymbolCreate, Candle
-from .. import indicators, price_action, fibonacci, elliott, volume_flow, analysis_report, watchlist, chart_data, stock_detail, knowledge_base, knowledge_retrieval, rule_registry
+from .. import indicators, price_action, fibonacci, elliott, volume_flow, analysis_report, watchlist, chart_data, stock_detail, knowledge_base, knowledge_retrieval, rule_registry, rule_evaluation
 
 router = APIRouter(prefix="/api/v1", tags=["market"])
 EXCHANGES = [
@@ -502,3 +502,33 @@ def activate_analysis_rule_version(version: str):
         return rule_registry.activate_version(version)
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc
+
+
+@router.get("/analysis/rules/compare")
+def compare_analysis_rule_versions(
+    symbol: str,
+    versions: str = Query(min_length=7, max_length=100),
+    timeframe: str = Query("1d", min_length=2, max_length=8),
+    limit: int = Query(500, ge=20, le=5000),
+):
+    """Compare 2-5 immutable rule versions against the same stored OHLCV history."""
+    requested = [item.strip() for item in versions.split(",") if item.strip()]
+    if not 2 <= len(requested) <= 5 or len(set(requested)) != len(requested):
+        raise HTTPException(422, "Provide 2 to 5 unique comma-separated versions")
+    candles = get_candles(symbol, timeframe, limit)
+    if not candles:
+        raise HTTPException(404, "No candle data found")
+    stored_versions = []
+    for version in requested:
+        item = rule_registry.get_version(version)
+        if item is None:
+            raise HTTPException(404, f"Unknown analysis rule version: {version}")
+        stored_versions.append(item)
+    try:
+        return {
+            "symbol": symbol.upper(),
+            "timeframe": timeframe,
+            "comparison": rule_evaluation.compare_rule_versions(candles, stored_versions),
+        }
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
