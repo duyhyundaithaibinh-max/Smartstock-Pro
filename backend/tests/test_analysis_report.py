@@ -41,6 +41,24 @@ class AnalysisReportTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_analysis_report([])
 
+    def test_report_uses_active_rule_configuration_and_version(self):
+        config = {
+            "fibonacci": {"lookback": 40, "wing": 1},
+            "elliott": {"lookback": 60, "wing": 1},
+            "volume_flow": {"window": 12},
+        }
+        result = build_analysis_report(
+            self.make_candles(),
+            rule_config=config,
+            rule_version="2.1.0",
+            rule_config_sha256="a" * 64,
+        )
+        self.assertEqual(result["analysis_rules_version"], "2.1.0")
+        self.assertEqual(result["analysis_rule_config_sha256"], "a" * 64)
+        self.assertEqual(result["fibonacci"]["method"]["lookback_bars"], 40)
+        self.assertEqual(result["fibonacci"]["method"]["pivot_wing"], 1)
+        self.assertEqual(result["volume_flow"]["window"], 12)
+
 
 if __name__ == "__main__":
     unittest.main()
