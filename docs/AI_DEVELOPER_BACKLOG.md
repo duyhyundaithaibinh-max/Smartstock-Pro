@@ -27,7 +27,7 @@ Agent xử lý **một mục mỗi lượt chạy**, theo thứ tự ưu tiên. 
 - [x] **SP-007 — Danh sách theo dõi.** SQLite watchlist, API GET/POST/DELETE/sắp xếp và unit tests; backend CI đã pass trong run 42388931745.
 - [x] **SP-008 — Biểu đồ giá và khối lượng.** API `/api/v1/candles/chart`, engine tổng hợp OHLCV ngày/tuần/tháng, màn hình Flutter biểu đồ nến/khối lượng; backend tests, Flutter analyze/tests và build debug APK đều pass trong run 42388931745.
 - [ ] **SP-009 — Trang chi tiết mã.** Đã thêm engine `stock_detail`, API `/api/v1/symbols/{symbol}/detail` và màn hình Flutter gồm RSI/MACD/EMA/ATR, xu hướng, hỗ trợ/kháng cự, thanh khoản ước tính, nguồn/thời điểm dữ liệu; unit tests đã thêm. Chờ CI xác nhận.
-- [ ] **SP-010 — Giao diện AI Analysis.** Hiển thị ba kịch bản, điều kiện xác nhận/vô hiệu, bằng chứng và cảnh báo dữ liệu thiếu.
+- [ ] **SP-010 — Giao diện báo cáo kịch bản.** Đã thêm màn hình Flutter đọc `/api/v1/analysis/report`, hiển thị xu hướng, breakout, RSI và ba kịch bản cùng bằng chứng/điều kiện xác nhận-vô hiệu; ghi rõ đây là báo cáo quy tắc, chưa phải kết luận AI. Chờ CI.
 
 ### P2 — Hybrid AI và kiểm soát chất lượng
 
