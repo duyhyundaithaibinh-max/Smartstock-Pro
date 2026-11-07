@@ -78,6 +78,19 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_document
             ON knowledge_chunks(document_id, chunk_index);
+        CREATE TABLE IF NOT EXISTS analysis_rule_versions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            version TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL,
+            config_json TEXT NOT NULL,
+            config_sha256 TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('draft','active','archived')),
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            activated_at TEXT
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_analysis_rule
+            ON analysis_rule_versions(status) WHERE status='active';
         CREATE TABLE IF NOT EXISTS watchlist (
             symbol TEXT PRIMARY KEY,
             sort_order INTEGER NOT NULL DEFAULT 0,
