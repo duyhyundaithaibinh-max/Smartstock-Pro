@@ -103,6 +103,7 @@ def build_analysis_report(candles):
     ]
 
     return {
+        "analysis_rules_version": "1.0.0",
         "status": "ok",
         "as_of": timestamps[-1],
         "bars_available": len(candles),
