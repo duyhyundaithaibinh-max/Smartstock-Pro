@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Body
 from pydantic import ValidationError
 from ..db import connection
 from ..schemas import SymbolCreate, Candle
-from .. import indicators, price_action, fibonacci, elliott, volume_flow, analysis_report, watchlist
+from .. import indicators, price_action, fibonacci, elliott, volume_flow, analysis_report, watchlist, chart_data
 
 router = APIRouter(prefix="/api/v1", tags=["market"])
 EXCHANGES = [
@@ -64,6 +64,36 @@ def get_candles(symbol: str, timeframe: str = "1d", limit: int = Query(500, ge=1
             (symbol.upper(), timeframe, limit),
         ).fetchall()
     return [dict(row) for row in reversed(rows)]
+
+
+@router.get("/candles/chart")
+def get_chart_candles(
+    symbol: str,
+    period: str = Query("daily", pattern="^(daily|weekly|monthly)$"),
+    limit: int = Query(500, ge=1, le=5000),
+):
+    """Return stored daily OHLCV as daily, ISO-weekly or calendar-month bars."""
+    daily = get_candles(symbol, "1d", min(limit * (5 if period == "weekly" else 23 if period == "monthly" else 1), 5000))
+    if not daily:
+        return {
+            "symbol": symbol.upper(),
+            "period": period,
+            "status": "no_data",
+            "candles": [],
+            "data_sources": [],
+            "note": "No stored daily OHLCV data; no prices or candles have been synthesized.",
+        }
+    aggregated = chart_data.aggregate_candles(daily, period)
+    aggregated = aggregated[-limit:]
+    return {
+        "symbol": symbol.upper(),
+        "period": period,
+        "status": "ok" if aggregated else "no_data",
+        "candles": aggregated,
+        "data_sources": sorted({source for candle in aggregated for source in candle["sources"]}),
+        "price_adjustment": "unknown",
+        "note": "Weekly/monthly bars are aggregated from available daily source candles; missing sessions are not filled.",
+    }
 
 
 @router.post("/candles/import-csv")
