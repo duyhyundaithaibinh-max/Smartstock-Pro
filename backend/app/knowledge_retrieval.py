@@ -12,7 +12,7 @@ from typing import Any
 
 from .db import connection
 
-_TOKEN = re.compile(r"[^\\W_]+", re.UNICODE)
+_TOKEN = re.compile(r"[^\W_]+", re.UNICODE)
 _K1 = 1.5
 _B = 0.75
 
