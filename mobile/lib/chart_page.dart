@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import 'stock_detail_page.dart';
+
 class ChartPage extends StatefulWidget {
   const ChartPage({super.key, required this.baseUrl, required this.symbol});
 
@@ -72,7 +74,23 @@ class _ChartPageState extends State<ChartPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text('${widget.symbol} • Biểu đồ')),
+      appBar: AppBar(
+        title: Text('${widget.symbol} • Biểu đồ'),
+        actions: [
+          IconButton(
+            tooltip: 'Chi tiết mã',
+            icon: const Icon(Icons.analytics_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => StockDetailPage(
+                  baseUrl: widget.baseUrl,
+                  symbol: widget.symbol,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(
