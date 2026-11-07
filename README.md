@@ -69,3 +69,8 @@ Nến tuần/tháng chỉ tổng hợp từ các phiên ngày có sẵn; hệ th
 - `POST /api/v1/analysis/rules/1.1.0/activate` activates an existing version and archives the prior active version.
 - Versions use MAJOR.MINOR.PATCH, are append-only, and include a SHA-256 hash of canonical JSON configuration. Existing versions cannot be overwritten.
 - The built-in `1.0.0` record preserves current defaults. Active configuration is applied by `/analysis/report` to Fibonacci lookback/pivot wing, Elliott lookback/pivot wing and volume-flow window; the report returns both rule version and configuration SHA-256. Price-action thresholds and indicator periods remain fixed defaults for now. API permission controls are not yet implemented.
+
+## Rule version evaluation (SP-017 — foundation)
+- `GET /api/v1/analysis/rules/compare?symbol=FPT&versions=1.0.0,1.1.0&timeframe=1d&limit=500` compares 2–5 stored rule versions against the same locally stored OHLCV candles.
+- Output includes version/config hashes, input provenance, deterministic signatures (trend, breakout, Fibonacci, Elliott, volume-flow and scenario statuses) and only the fields that differ.
+- This is an output comparison, not a backtest: no simulated fills, returns, win rate, forecast accuracy or claim that a newer version is better. Out-of-sample datasets and predeclared evaluation criteria are required for performance claims.
