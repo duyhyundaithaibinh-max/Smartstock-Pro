@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Body
 from pydantic import ValidationError
 from ..db import connection
 from ..schemas import SymbolCreate, Candle
-from .. import indicators, price_action, fibonacci, elliott, volume_flow, analysis_report, watchlist, chart_data, stock_detail, knowledge_base, knowledge_retrieval
+from .. import indicators, price_action, fibonacci, elliott, volume_flow, analysis_report, watchlist, chart_data, stock_detail, knowledge_base, knowledge_retrieval, rule_registry
 
 router = APIRouter(prefix="/api/v1", tags=["market"])
 EXCHANGES = [
@@ -458,3 +458,41 @@ def search_knowledge_documents(
         return result
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/analysis/rules")
+def list_analysis_rule_versions(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    """List immutable rule configuration versions and their activation state."""
+    return rule_registry.list_versions(limit=limit, offset=offset)
+
+
+@router.get("/analysis/rules/active")
+def get_active_analysis_rules():
+    """Return the single active rule metadata/configuration version."""
+    return rule_registry.get_active_version()
+
+
+@router.post("/analysis/rules", status_code=201)
+def create_analysis_rule_version(payload: dict = Body(...)):
+    """Create an immutable draft; existing versions can never be overwritten."""
+    try:
+        return rule_registry.create_version(
+            version=payload.get("version", ""),
+            name=payload.get("name", ""),
+            description=payload.get("description", ""),
+            config=payload.get("config", {}),
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/analysis/rules/{version}/activate")
+def activate_analysis_rule_version(version: str):
+    """Activate a stored version and archive the previous active version."""
+    try:
+        return rule_registry.activate_version(version)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
