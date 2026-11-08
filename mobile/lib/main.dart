@@ -132,6 +132,7 @@ class _DashboardPageState extends State<DashboardPage> {
               controller: _urlController,
               decoration: const InputDecoration(labelText: 'Backend URL', border: OutlineInputBorder()),
               keyboardType: TextInputType.url,
+              onSubmitted: (_) => _loadAuthStatus(),
             ),
             const SizedBox(height: 12),
             TextField(
