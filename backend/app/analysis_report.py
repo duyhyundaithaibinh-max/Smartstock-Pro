@@ -87,7 +87,7 @@ def build_analysis_report(candles, rule_config=None, rule_version="1.0.0", rule_
     bullish_evidence = []
     bearish_evidence = []
     if trend_state == "uptrend":
-        bullish_evidence.append("EMA20/EMA50 และ vị trí giá đang nghiêng về xu hướng tăng")
+        bullish_evidence.append(f"EMA{ema_fast_period}/EMA{ema_slow_period} và vị trí giá đang nghiêng về xu hướng tăng")
     elif trend_state == "downtrend":
         bearish_evidence.append(f"EMA{ema_fast_period}/EMA{ema_slow_period} và vị trí giá đang nghiêng về xu hướng giảm")
     if breakout_state == "confirmed_bullish":
