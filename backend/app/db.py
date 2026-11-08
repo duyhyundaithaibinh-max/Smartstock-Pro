@@ -91,6 +91,16 @@ def init_db():
         );
         CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_analysis_rule
             ON analysis_rule_versions(status) WHERE status='active';
+        CREATE TABLE IF NOT EXISTS analysis_rule_activation_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            version TEXT NOT NULL,
+            config_sha256 TEXT NOT NULL,
+            previous_version TEXT,
+            activated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(version) REFERENCES analysis_rule_versions(version)
+        );
+        CREATE INDEX IF NOT EXISTS idx_rule_activation_history_time
+            ON analysis_rule_activation_history(activated_at DESC, id DESC);
         CREATE TABLE IF NOT EXISTS watchlist (
             symbol TEXT PRIMARY KEY,
             sort_order INTEGER NOT NULL DEFAULT 0,
