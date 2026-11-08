@@ -59,19 +59,15 @@ Future<void> _pumpTraining(
 }
 
 Future<void> _showExport(WidgetTester tester) async {
-  await tester.scrollUntilVisible(
-    find.text('Lưu JSONL đã duyệt'),
-    250,
-    scrollable: find.byType(Scrollable).first,
-  );
+  final target = find.text('Lưu JSONL đã duyệt');
+  await tester.ensureVisible(target);
+  await tester.pumpAndSettle();
 }
 
 Future<void> _showCitation(WidgetTester tester, String citation) async {
-  await tester.scrollUntilVisible(
-    find.byKey(ValueKey('citation-open-$citation')),
-    250,
-    scrollable: find.byType(Scrollable).first,
-  );
+  final target = find.byKey(ValueKey('citation-open-$citation'));
+  await tester.ensureVisible(target);
+  await tester.pumpAndSettle();
 }
 
 http.Response _trainingRoute(http.Request request, {
