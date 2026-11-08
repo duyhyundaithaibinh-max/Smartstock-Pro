@@ -29,6 +29,8 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   List<dynamic> _examples = [];
   Map<String, dynamic>? _evaluation;
   bool _savingExample = false;
+  bool _trainingDataLoading = false;
+  final Set<int> _trainingActionIds = <int>{};
   List<dynamic> _documents = [];
   Map<String, dynamic>? _context;
   String? _error;
@@ -58,12 +60,21 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   }
 
   Future<void> _loadTrainingData() async {
+    if (mounted) {
+      setState(() {
+        _trainingDataLoading = true;
+      });
+    }
     try {
       final responses = await Future.wait([
-        http.get(_uri('/api/v1/training/examples', {'limit': '100', 'offset': '0'}),
-            headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 20)),
-        http.get(_uri('/api/v1/training/evaluation'),
-            headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 20)),
+        http.get(
+          _uri('/api/v1/training/examples', {'limit': '100', 'offset': '0'}),
+          headers: apiAuthHeaders(widget.apiToken),
+        ).timeout(const Duration(seconds: 20)),
+        http.get(
+          _uri('/api/v1/training/evaluation'),
+          headers: apiAuthHeaders(widget.apiToken),
+        ).timeout(const Duration(seconds: 20)),
       ]);
       if (responses.any((response) => response.statusCode != 200)) {
         throw Exception('Backend chưa hỗ trợ đầy đủ API Training Room.');
@@ -76,7 +87,11 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         _evaluation = evaluation;
       });
     } catch (error) {
-      if (mounted) setState(() => _error = 'Không tải được bộ dữ liệu huấn luyện: $error');
+      if (mounted) {
+        setState(() => _error = 'Không tải được bộ dữ liệu huấn luyện: $error');
+      }
+    } finally {
+      if (mounted) setState(() => _trainingDataLoading = false);
     }
   }
 
@@ -123,24 +138,76 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   }
 
   Future<void> _approveTrainingExample(int id) async {
+    if (_trainingActionIds.contains(id)) return;
+    setState(() {
+      _trainingActionIds.add(id);
+      _error = null;
+    });
     try {
-      final response = await http.post(_uri('/api/v1/training/examples/$id/approve'),
-          headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200) throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      final response = await http.post(
+        _uri('/api/v1/training/examples/$id/approve'),
+        headers: apiAuthHeaders(widget.apiToken),
+      ).timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      }
       await _loadTrainingData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã duyệt ví dụ huấn luyện.')),
+      );
     } catch (error) {
-      if (mounted) setState(() => _error = 'Không duyệt được ví dụ: $error');
+      if (mounted) {
+        setState(() => _error = 'Không duyệt được ví dụ: $error');
+      }
+    } finally {
+      if (mounted) setState(() => _trainingActionIds.remove(id));
     }
   }
 
   Future<void> _deleteTrainingExample(int id) async {
+    if (_trainingActionIds.contains(id)) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Xóa ví dụ huấn luyện?'),
+        content: const Text('Thao tác này sẽ xóa ví dụ khỏi bộ dữ liệu cục bộ.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Xóa'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _trainingActionIds.add(id);
+      _error = null;
+    });
     try {
-      final response = await http.delete(_uri('/api/v1/training/examples/$id'),
-          headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200) throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      final response = await http.delete(
+        _uri('/api/v1/training/examples/$id'),
+        headers: apiAuthHeaders(widget.apiToken),
+      ).timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      }
       await _loadTrainingData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã xóa ví dụ huấn luyện.')),
+      );
     } catch (error) {
-      if (mounted) setState(() => _error = 'Không xóa được ví dụ: $error');
+      if (mounted) {
+        setState(() => _error = 'Không xóa được ví dụ: $error');
+      }
+    } finally {
+      if (mounted) setState(() => _trainingActionIds.remove(id));
     }
   }
 
@@ -542,15 +609,29 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                   const SizedBox(height: 10),
                   SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: _savingExample ? null : _saveTrainingExample, icon: const Icon(Icons.playlist_add), label: Text(_savingExample ? 'Đang lưu...' : 'Lưu ví dụ chờ duyệt'))),
                   const Divider(height: 24),
+                  if (_trainingDataLoading) ...[
+                    const LinearProgressIndicator(),
+                    const SizedBox(height: 8),
+                    const Text('Đang tải dữ liệu huấn luyện...'),
+                  ],
                   if (_evaluation != null) ...[
                     Text('Tổng: ${_evaluation!['total_examples'] ?? 0} • Đã duyệt: ${_evaluation!['approved_examples'] ?? 0} • Chờ duyệt: ${_evaluation!['draft_examples'] ?? 0}'),
                     Text('Câu hỏi trùng: ${_evaluation!['duplicate_question_groups'] ?? 0} • Trạng thái: ${_evaluation!['readiness'] ?? '—'}'),
                     Wrap(spacing: 8, children: [
-                      OutlinedButton.icon(onPressed: _loadTrainingData, icon: const Icon(Icons.refresh), label: const Text('Cập nhật')),
-                      OutlinedButton.icon(onPressed: (_evaluation!['approved_examples'] as num? ?? 0) > 0 ? _copyTrainingExport : null, icon: const Icon(Icons.copy), label: const Text('Sao chép JSONL đã duyệt')),
+                      OutlinedButton.icon(
+                        onPressed: _trainingDataLoading ? null : _loadTrainingData,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Cập nhật'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: !_trainingDataLoading && (_evaluation!['approved_examples'] as num? ?? 0) > 0 ? _copyTrainingExport : null,
+                        icon: const Icon(Icons.copy),
+                        label: const Text('Sao chép JSONL đã duyệt'),
+                      ),
                     ]),
                   ],
-                  if (_examples.isEmpty) const Text('Chưa có ví dụ huấn luyện. Hãy nạp tài liệu, tra cứu nguồn rồi tạo ví dụ đầu tiên.'),
+                  if (!_trainingDataLoading && _examples.isEmpty)
+                    const Text('Chưa có ví dụ huấn luyện. Hãy nạp tài liệu, tra cứu nguồn rồi tạo ví dụ đầu tiên.'),
                   ..._examples.whereType<Map<String, dynamic>>().map((item) {
                     final id = item['id'];
                     final approved = item['status'] == 'approved';
@@ -563,10 +644,24 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                           Text(item['question']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w600)),
                           Text(item['expected_answer']?.toString() ?? ''),
                           Text('Nguồn: $citations', style: Theme.of(context).textTheme.bodySmall),
-                          if (id is int) Wrap(spacing: 8, children: [
-                            if (!approved) TextButton.icon(onPressed: () => _approveTrainingExample(id), icon: const Icon(Icons.verified_outlined), label: const Text('Duyệt')),
-                            TextButton.icon(onPressed: () => _deleteTrainingExample(id), icon: const Icon(Icons.delete_outline), label: const Text('Xóa')),
-                          ]),
+                          if (id is int) ...[
+                            const SizedBox(height: 6),
+                            Wrap(spacing: 8, children: [
+                              if (!approved)
+                                TextButton.icon(
+                                  onPressed: _trainingActionIds.contains(id) ? null : () => _approveTrainingExample(id),
+                                  icon: _trainingActionIds.contains(id)
+                                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                                      : const Icon(Icons.verified_outlined),
+                                  label: Text(_trainingActionIds.contains(id) ? 'Đang xử lý...' : 'Duyệt'),
+                                ),
+                              TextButton.icon(
+                                onPressed: _trainingActionIds.contains(id) ? null : () => _deleteTrainingExample(id),
+                                icon: const Icon(Icons.delete_outline),
+                                label: const Text('Xóa'),
+                              ),
+                            ]),
+                          ],
                         ]),
                       ),
                     );
