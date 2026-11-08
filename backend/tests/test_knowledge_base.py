@@ -30,6 +30,15 @@ class KnowledgeBaseTests(unittest.TestCase):
         self.assertTrue(all(item["char_end"] > item["char_start"] for item in first))
         self.assertLessEqual(first[1]["char_start"], first[0]["char_end"])
 
+    def test_chunk_offsets_reference_original_text_including_whitespace_and_crlf(self):
+        source = "\\r\\n  Fibonacci retracement\\r\\n\\r\\nElliott Wave  "
+        chunks = knowledge_base.chunk_text(source, chunk_size=100, overlap=10)
+        self.assertEqual(len(chunks), 1)
+        chunk = chunks[0]
+        self.assertEqual(source[chunk["char_start"]:chunk["char_end"]], chunk["content"])
+        self.assertEqual(chunk["char_start"], source.index("Fibonacci"))
+        self.assertEqual(chunk["char_end"], source.index("Wave") + len("Wave"))
+
     def test_ingest_text_document_persists_metadata_and_chunks(self):
         raw = ("EMA, RSI, Fibonacci và Elliott. " * 100).encode("utf-8")
         result = knowledge_base.ingest_document("phan-tich.md", raw, source="research-note")
