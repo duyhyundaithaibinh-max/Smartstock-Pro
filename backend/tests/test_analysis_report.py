@@ -76,6 +76,24 @@ class AnalysisReportTests(unittest.TestCase):
         self.assertEqual(fibonacci_mock.call_args.kwargs["lookback"], 40)
         self.assertEqual(fibonacci_mock.call_args.kwargs["wing"], 1)
 
+    def test_report_uses_versioned_indicator_periods(self):
+        result = build_analysis_report(
+            self.make_candles(120),
+            rule_config={"indicators": {
+                "ema_fast_period": 10, "ema_slow_period": 30,
+                "rsi_period": 9, "macd_fast_period": 8,
+                "macd_slow_period": 21, "macd_signal_period": 5,
+                "atr_period": 10,
+            }},
+        )
+        self.assertEqual(result["indicators"]["ema_fast_period"], 10)
+        self.assertEqual(result["indicators"]["ema_slow_period"], 30)
+        self.assertEqual(result["indicators"]["rsi_period"], 9)
+        self.assertEqual(result["indicators"]["macd_fast_period"], 8)
+        self.assertEqual(result["indicators"]["macd_slow_period"], 21)
+        self.assertEqual(result["indicators"]["macd_signal_period"], 5)
+        self.assertEqual(result["indicators"]["atr_period"], 10)
+
 
 
 if __name__ == "__main__":
