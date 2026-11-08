@@ -29,16 +29,38 @@ class SmartStockApp extends StatelessWidget {
 }
 
 class DashboardPage extends StatefulWidget {
-  const DashboardPage({super.key});
+  const DashboardPage({
+    super.key,
+    this.httpClient,
+    this.chartPageBuilder,
+    this.trainingRoomPageBuilder,
+  });
+
+  /// Injectable transport and route builders keep auth/session behavior testable.
+  /// Production uses the default HTTP client and real feature pages.
+  final http.Client? httpClient;
+  final Widget Function(String baseUrl, String symbol, String apiToken,
+      SessionExpiredCallback onSessionExpired)? chartPageBuilder;
+  final Widget Function(String baseUrl, String apiToken,
+      SessionExpiredCallback onSessionExpired)? trainingRoomPageBuilder;
 
   @override
   State<DashboardPage> createState() => _DashboardPageState();
 }
 
 class _DashboardPageState extends State<DashboardPage> {
+  late final http.Client _httpClient = widget.httpClient ?? http.Client();
+  bool get _ownsHttpClient => widget.httpClient == null;
   final TextEditingController _urlController =
       TextEditingController(text: 'http://10.0.2.2:8000');
-  final TextEditingController _tokenController = TextEditingController();
+  final TextEditingController _usernameController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _bootstrapSecretController = TextEditingController();
+  String? _accessToken;
+  bool _sessionExpired = false;
+  bool _ownerInitialized = true;
+  bool _authStatusLoaded = false;
+  bool _authLoading = false;
   final TextEditingController _symbolController = TextEditingController();
   final TextEditingController _nameController = TextEditingController();
 
@@ -52,27 +74,128 @@ class _DashboardPageState extends State<DashboardPage> {
   String get _baseUrl =>
       _urlController.text.trim().replaceAll(RegExp(r'/$'), '');
 
+  void _expireSession(String token) {
+    if (!mounted || token.isEmpty || token != _accessToken || _sessionExpired) return;
+    _sessionExpired = true;
+    setState(() {
+      _accessToken = null;
+      _health = null;
+      _watchlist = [];
+      _symbolController.clear();
+      _nameController.clear();
+      _error = null;
+      _loading = false;
+      _addingSymbol = false;
+    });
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text(
+        'Phiên đăng nhập đã hết hạn hoặc bị thu hồi. Vui lòng đăng nhập lại.',
+      )),
+    );
+  }
+
+  bool _handleProtectedStatus(int statusCode, String token) {
+    if (statusCode != 401) return false;
+    _expireSession(token);
+    return true;
+  }
+
+  @override
+  void initState() { super.initState(); _loadAuthStatus(); }
+
+  Future<void> _loadAuthStatus() async {
+    setState(() { _authStatusLoaded = false; _error = null; });
+    try {
+      final response = await _httpClient.get(Uri.parse('$_baseUrl/api/v1/auth/status')).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) throw Exception('Backend trả về HTTP ${response.statusCode}');
+      final payload = jsonDecode(response.body) as Map<String, dynamic>;
+      if (!mounted) return;
+      setState(() { _ownerInitialized = payload['owner_initialized'] == true; _authStatusLoaded = true; });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() { _authStatusLoaded = true; _error = 'Không kiểm tra được backend: $error'; });
+    }
+  }
+
+  Future<void> _authenticate({required bool register}) async {
+    if (_authLoading) return;
+    setState(() { _authLoading = true; _error = null; });
+    try {
+      final username = _usernameController.text.trim();
+      final password = _passwordController.text;
+      if (username.isEmpty || password.isEmpty) throw Exception('Nhập tên đăng nhập và mật khẩu.');
+      final secret = _bootstrapSecretController.text.trim();
+      if (register && password.length < 12) throw Exception('Mật khẩu cần tối thiểu 12 ký tự.');
+      if (register && (secret.length < 32 || secret.length > 256)) throw Exception('Bootstrap secret cần từ 32 đến 256 ký tự.');
+      if (register) {
+        final setup = await _httpClient.post(Uri.parse('$_baseUrl/api/v1/auth/register-first-owner'), headers: {'Content-Type': 'application/json'}, body: jsonEncode({'username': username, 'password': password, 'bootstrap_secret': secret})).timeout(const Duration(seconds: 15));
+        if (setup.statusCode != 201) {
+          if (setup.statusCode == 403) {
+            throw Exception('Bootstrap secret không đúng hoặc đã được sử dụng.');
+          }
+          if (setup.statusCode == 409) {
+            _bootstrapSecretController.clear();
+            if (mounted) setState(() => _ownerInitialized = true);
+            throw Exception(
+              'Tài khoản chủ sở hữu đã được khởi tạo. Hãy đăng nhập hoặc kiểm tra trạng thái backend.',
+            );
+          }
+          if (setup.statusCode == 422) {
+            throw Exception('Thông tin khởi tạo chưa hợp lệ.');
+          }
+          throw Exception('Không khởi tạo được tài khoản (HTTP ${setup.statusCode}).');
+        }
+        _bootstrapSecretController.clear();
+      }
+      final response = await _httpClient.post(Uri.parse('$_baseUrl/api/v1/auth/login'), headers: {'Content-Type': 'application/json'}, body: jsonEncode({'username': username, 'password': password})).timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200) throw Exception('Đăng nhập thất bại (HTTP ${response.statusCode}).');
+      final payload = jsonDecode(response.body) as Map<String, dynamic>;
+      final token = payload['access_token']?.toString();
+      if (token == null || token.isEmpty) throw Exception('Backend không trả access token hợp lệ.');
+      if (!mounted) return;
+      setState(() { _accessToken = token; _sessionExpired = false; _ownerInitialized = true; });
+      _passwordController.clear();
+      await _connect();
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _authLoading = false);
+    }
+  }
+
+  Future<void> _logout() async {
+    final token = _accessToken;
+    if (token != null) { try { await _httpClient.post(Uri.parse('$_baseUrl/api/v1/auth/logout'), headers: {'Authorization': 'Bearer $token'}).timeout(const Duration(seconds: 8)); } catch (_) { /* Clear local session even if logout request fails. */ } }
+    if (!mounted) return;
+    setState(() { _accessToken = null; _health = null; _watchlist = []; });
+  }
+
   Future<void> _connect() async {
+    final token = _accessToken;
+    if (token == null || token.isEmpty) return;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final healthResponse = await http
+      final healthResponse = await _httpClient
           .get(Uri.parse('$_baseUrl/health'))
           .timeout(const Duration(seconds: 8));
       if (healthResponse.statusCode != 200) {
         throw Exception('API trả về HTTP ${healthResponse.statusCode}');
       }
+      if (token != _accessToken || _sessionExpired) return;
 
-      final watchlistResponse = await http
+      final watchlistResponse = await _httpClient
           .get(
             Uri.parse('$_baseUrl/api/v1/watchlist'),
-            headers: apiAuthHeaders(_tokenController.text),
+            headers: apiAuthHeaders(token)
           )
           .timeout(const Duration(seconds: 8));
+      if (_handleProtectedStatus(watchlistResponse.statusCode, token)) return;
       if (watchlistResponse.statusCode != 200) {
-        throw Exception('Không tải được danh sách theo dõi: HTTP ${watchlistResponse.statusCode}');
+        throw ApiRequestException(watchlistResponse.statusCode);
       }
 
       final health = jsonDecode(healthResponse.body) as Map<String, dynamic>;
@@ -83,13 +206,13 @@ class _DashboardPageState extends State<DashboardPage> {
         _watchlist = payload['items'] as List<dynamic>? ?? [];
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || token != _accessToken) return;
       setState(() {
         _health = null;
-        _error = 'Không kết nối được backend: $error';
+        _error = 'Không kết nối được backend: ${safeApiErrorMessage(error, fallback: 'Đã xảy ra lỗi khi tải dữ liệu.')}';
       });
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && token == _accessToken) setState(() => _loading = false);
     }
   }
 
@@ -103,13 +226,15 @@ class _DashboardPageState extends State<DashboardPage> {
       return;
     }
 
+    final token = _accessToken;
+    if (token == null || token.isEmpty) return;
     setState(() => _addingSymbol = true);
     try {
       final headers = <String, String>{
         'Content-Type': 'application/json',
-        ...apiAuthHeaders(_tokenController.text),
+        ...apiAuthHeaders(token)
       };
-      final createResponse = await http
+      final createResponse = await _httpClient
           .post(
             Uri.parse('$_baseUrl/api/v1/symbols'),
             headers: headers,
@@ -120,26 +245,25 @@ class _DashboardPageState extends State<DashboardPage> {
             }),
           )
           .timeout(const Duration(seconds: 12));
+      if (_handleProtectedStatus(createResponse.statusCode, token)) return;
       if (createResponse.statusCode != 201 &&
           createResponse.statusCode != 409) {
-        throw Exception(
-          'Không tạo được mã: HTTP ${createResponse.statusCode} ${createResponse.body}',
-        );
+        throw ApiRequestException(createResponse.statusCode);
       }
+      if (token != _accessToken || _sessionExpired) return;
 
-      final watchlistResponse = await http
+      final watchlistResponse = await _httpClient
           .post(
             Uri.parse('$_baseUrl/api/v1/watchlist').replace(
               queryParameters: {'symbol': symbol},
             ),
-            headers: apiAuthHeaders(_tokenController.text),
+            headers: apiAuthHeaders(token)
           )
           .timeout(const Duration(seconds: 12));
+      if (_handleProtectedStatus(watchlistResponse.statusCode, token)) return;
       if (watchlistResponse.statusCode != 201 &&
           watchlistResponse.statusCode != 409) {
-        throw Exception(
-          'Không thêm được vào watchlist: HTTP ${watchlistResponse.statusCode} ${watchlistResponse.body}',
-        );
+        throw ApiRequestException(watchlistResponse.statusCode);
       }
 
       _symbolController.clear();
@@ -154,55 +278,80 @@ class _DashboardPageState extends State<DashboardPage> {
       );
       await _connect();
     } catch (error) {
-      if (mounted) {
+      if (mounted && token == _accessToken) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Không thêm được mã: $error')),
+          SnackBar(content: Text('Không thêm được mã: ${safeApiErrorMessage(error, fallback: 'Đã xảy ra lỗi khi thêm mã.')}')),
         );
       }
     } finally {
-      if (mounted) setState(() => _addingSymbol = false);
+      if (mounted && token == _accessToken) setState(() => _addingSymbol = false);
     }
   }
 
   void _openChart(String symbol) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => ChartPage(
+        builder: (_) => widget.chartPageBuilder?.call(
+          _baseUrl, symbol, _accessToken ?? '', _expireSession,
+        ) ?? ChartPage(
           baseUrl: _baseUrl,
           symbol: symbol,
-          apiToken: _tokenController.text.trim(),
+          apiToken: _accessToken ?? '',
+          onSessionExpired: _expireSession,
         ),
       ),
     );
   }
 
   void _openTrainingRoom() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => TrainingRoomPage(
-          baseUrl: _baseUrl,
-          apiToken: _tokenController.text.trim(),
-        ),
-      ),
-    );
+    final token = _accessToken;
+    if (token == null) return;
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => widget.trainingRoomPageBuilder?.call(
+            _baseUrl, token, _expireSession) ??
+          TrainingRoomPage(
+            baseUrl: _baseUrl, apiToken: token,
+            onSessionExpired: _expireSession,
+          ),
+    ));
   }
 
   @override
   void dispose() {
     _urlController.dispose();
-    _tokenController.dispose();
+    _usernameController.dispose();
+    _passwordController.dispose();
+    _bootstrapSecretController.dispose();
     _symbolController.dispose();
     _nameController.dispose();
+    if (_ownsHttpClient) _httpClient.close();
     super.dispose();
+  }
+
+  Widget _loginView(ThemeData theme) {
+    final canRegister = _authStatusLoaded && !_ownerInitialized;
+    return Scaffold(appBar: AppBar(title: const Text('SmartStock Pro • Đăng nhập')), body: ListView(padding: const EdgeInsets.all(20), children: [
+      const Icon(Icons.lock_outline, size: 52),
+      Text(!_authStatusLoaded ? 'Kết nối backend' : (canRegister ? 'Khởi tạo tài khoản chủ sở hữu' : 'Đăng nhập chủ sở hữu'), style: theme.textTheme.headlineSmall, textAlign: TextAlign.center),
+      TextField(key: const ValueKey('backend-url'), controller: _urlController, decoration: const InputDecoration(labelText: 'Backend URL', border: OutlineInputBorder()), keyboardType: TextInputType.url, onSubmitted: (_) => _loadAuthStatus()),
+      TextButton.icon(onPressed: _authLoading ? null : _loadAuthStatus, icon: const Icon(Icons.refresh), label: const Text('Kiểm tra backend')),
+      TextField(key: const ValueKey('username'), controller: _usernameController, decoration: const InputDecoration(labelText: 'Tên đăng nhập', border: OutlineInputBorder())),
+      if (canRegister) TextField(key: const ValueKey('bootstrap-secret'), controller: _bootstrapSecretController, obscureText: true, enableSuggestions: false, autocorrect: false, decoration: const InputDecoration(labelText: 'Bootstrap secret khởi tạo', helperText: 'Lấy trên máy chủ tin cậy bằng lệnh show_bootstrap_secret. Không gửi secret qua chat hoặc log.', border: OutlineInputBorder())),
+      TextField(key: const ValueKey('password'), controller: _passwordController, obscureText: true, decoration: const InputDecoration(labelText: 'Mật khẩu', helperText: 'Tối thiểu 12 ký tự. Phiên chỉ lưu trong bộ nhớ ứng dụng.')),
+      FilledButton(key: const ValueKey('auth-submit'), onPressed: (!_authStatusLoaded || _authLoading) ? null : () => _authenticate(register: canRegister), child: Text(_authLoading ? 'Đang xử lý...' : (canRegister ? 'Khởi tạo chủ sở hữu' : 'Đăng nhập'))),
+      if (_error != null) Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+    ]));
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    if (_accessToken == null) return _loginView(theme);
     return Scaffold(
       appBar: AppBar(
         title: const Text('SmartStock Pro'),
         backgroundColor: theme.colorScheme.surfaceContainer,
+        actions: [IconButton(key: const ValueKey('logout'), tooltip: 'Đăng xuất', onPressed: _logout, icon: const Icon(Icons.logout))],
       ),
       body: RefreshIndicator(
         onRefresh: _connect,
@@ -225,18 +374,6 @@ class _DashboardPageState extends State<DashboardPage> {
                         border: OutlineInputBorder(),
                       ),
                       keyboardType: TextInputType.url,
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _tokenController,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: 'API Bearer Token (nếu backend bật bảo vệ)',
-                        helperText:
-                            'Để trống khi chạy local ở chế độ phát triển.',
-                        border: OutlineInputBorder(),
-                      ),
-                      autocorrect: false,
                     ),
                     const SizedBox(height: 10),
                     SizedBox(
