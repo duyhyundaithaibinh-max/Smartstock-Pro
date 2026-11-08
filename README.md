@@ -76,7 +76,7 @@ Nến tuần/tháng chỉ tổng hợp từ các phiên ngày có sẵn; hệ th
 - `GET /api/v1/analysis/rules` lists immutable rule versions and activation history.
 - `GET /api/v1/analysis/rules/active` returns the active version and canonical JSON configuration.
 - `GET /api/v1/analysis/rules/history` returns append-only activation events, including the previous version and configuration hash.
-- `POST /api/v1/analysis/rules` creates a draft using `{"version":"1.1.0","name":"EMA experiment","description":"Draft","config":{"trend":{"ema_fast":20}}}`.
+- `POST /api/v1/analysis/rules` creates a draft using `{"version":"1.1.0","name":"Volume window experiment","description":"Draft","config":{"volume_flow":{"window":15}}}`.
 - `POST /api/v1/analysis/rules/1.1.0/activate` activates an existing version and archives the prior active version.
 - Versions use MAJOR.MINOR.PATCH, are append-only, and include a SHA-256 hash of canonical JSON configuration. Existing versions cannot be overwritten.
 - The built-in `1.0.0` record preserves current defaults. Active configuration is applied by `/analysis/report` to Fibonacci lookback/pivot wing, Elliott lookback/pivot wing and volume-flow window; the report returns both rule version and configuration SHA-256. Price-action thresholds and indicator periods remain fixed defaults for now. API permission controls are not yet implemented.
