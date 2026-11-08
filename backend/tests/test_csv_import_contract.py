@@ -35,17 +35,17 @@ class CsvImportContractTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as raised:
             asyncio.run(market.import_csv(
                 symbol="VGI", source="   ", file=self.upload(
-                    "timestamp,open,high,low,close,volume\\n"
-                    "2026-11-07,10,12,9,11,1000\\n"
+                    "timestamp,open,high,low,close,volume\n"
+                    "2026-11-07,10,12,9,11,1000\n"
                 )
             ))
         self.assertEqual(raised.exception.status_code, 422)
 
     def test_rejects_timezone_equivalent_duplicate_timestamps_atomically(self):
         csv_text = (
-            "timestamp,open,high,low,close,volume\\n"
-            "2026-11-07T00:00:00+07:00,10,12,9,11,1000\\n"
-            "2026-11-06T17:00:00Z,11,13,10,12,1200\\n"
+            "timestamp,open,high,low,close,volume\n"
+            "2026-11-07T00:00:00+07:00,10,12,9,11,1000\n"
+            "2026-11-06T17:00:00Z,11,13,10,12,1200\n"
         )
         with self.assertRaises(HTTPException) as raised:
             asyncio.run(market.import_csv(
@@ -58,8 +58,8 @@ class CsvImportContractTests(unittest.TestCase):
 
     def test_valid_import_trims_and_persists_provenance(self):
         csv_text = (
-            "timestamp,open,high,low,close,volume\\n"
-            "2026-11-07,10,12,9,11,1000\\n"
+            "timestamp,open,high,low,close,volume\n"
+            "2026-11-07,10,12,9,11,1000\n"
         )
         result = asyncio.run(market.import_csv(
             symbol="VGI", source="  licensed_feed  ", file=self.upload(csv_text)
