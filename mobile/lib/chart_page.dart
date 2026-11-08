@@ -101,6 +101,7 @@ class _ChartPageState extends State<ChartPage> {
                 builder: (_) => AnalysisPage(
                   baseUrl: widget.baseUrl,
                   symbol: widget.symbol,
+                  apiToken: widget.apiToken,
                 ),
               ),
             ),
