@@ -52,6 +52,21 @@ class TrainingRoomTests(unittest.TestCase):
         self.assertEqual(item["status"], "draft")
         self.assertEqual(connection_spy.call_count, 1)
 
+    def test_create_locks_database_before_validating_citations(self):
+        original = training_room._citation_exists
+        transaction_states = []
+
+        def assert_transaction_started(conn, citation):
+            transaction_states.append(conn.in_transaction)
+            return original(conn, citation)
+
+        with patch.object(
+            training_room, "_citation_exists", side_effect=assert_transaction_started
+        ):
+            training_room.create_example(self._payload())
+
+        self.assertEqual(transaction_states, [True])
+
     def test_rejects_nonexistent_source_citation(self):
         payload = self._payload()
         payload["citation_ids"] = ["kb:999:0"]
