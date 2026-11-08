@@ -104,6 +104,25 @@ class AnalysisReportTests(unittest.TestCase):
         self.assertIsNone(result["indicators"]["rsi14"])
 
 
+    def test_bearish_evidence_uses_configured_range_lookback(self):
+        bearish_trend = {
+            "trend": {"classification": "downtrend"},
+            "breakout": {"state": "confirmed_bearish", "range_lookback_bars": 30},
+            "price_zones": {"supports": [], "resistances": []},
+        }
+        with patch(
+            "app.analysis_report.price_action.analyze_price_action",
+            return_value=bearish_trend,
+        ):
+            result = build_analysis_report(
+                self.make_candles(),
+                rule_config={"price_action": {"range_lookback": 30}},
+            )
+        bearish = next(item for item in result["scenarios"] if item["name"] == "bearish")
+        self.assertIn("Breakdown thủng biên 30 nến có xác nhận volume", bearish["evidence"])
+        self.assertNotIn("Breakdown thủng biên 20 nến có xác nhận volume", bearish["evidence"])
+
+
 
 if __name__ == "__main__":
     unittest.main()
