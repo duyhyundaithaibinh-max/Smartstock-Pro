@@ -33,6 +33,34 @@ class PriceActionTests(unittest.TestCase):
         self.assertEqual(result["breakout"]["state"], "confirmed_bullish")
         self.assertGreaterEqual(result["breakout"]["volume_ratio"], 1.2)
 
+    def test_configurable_range_and_volume_thresholds_are_reported(self):
+        highs, lows, closes, volumes = self.make_series()
+        result = analyze_price_action(
+            highs, lows, closes, volumes,
+            range_lookback=30,
+            volume_confirmation_pct=150,
+            breakout_buffer_atr_pct=50,
+            lookback=60,
+            wing=3,
+        )
+        self.assertEqual(result["breakout"]["range_lookback_bars"], 30)
+        self.assertEqual(result["breakout"]["volume_confirmation_threshold"], 1.5)
+        self.assertEqual(result["breakout"]["price_buffer_atr"], 0.5)
+        self.assertEqual(result["price_zones"]["lookback_bars"], 60)
+        self.assertEqual(result["price_zones"]["pivot_wing"], 3)
+        self.assertIn("1.50 lần trung bình 30 nến", result["breakout"]["confirmation_condition"])
+
+    def test_rule_parameters_are_range_validated(self):
+        highs, lows, closes, volumes = self.make_series()
+        for kwargs in (
+            {"range_lookback": 19},
+            {"volume_confirmation_pct": 99},
+            {"breakout_buffer_atr_pct": 201},
+            {"wing": 0},
+        ):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                analyze_price_action(highs, lows, closes, volumes, **kwargs)
+
     def test_price_break_without_volume_is_unconfirmed(self):
         highs, lows, closes, volumes = self.make_series()
         prior_high = max(highs[-21:-1])
