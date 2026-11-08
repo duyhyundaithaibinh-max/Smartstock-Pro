@@ -6,3 +6,5 @@
 **/bootstrap.secret.*
 /data/
 /backend/data/
+
+**/.bootstrap-secret-*
