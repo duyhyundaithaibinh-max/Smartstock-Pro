@@ -8,10 +8,14 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import os
 import secrets
+import tempfile
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from . import db
 from .db import connection
 
 _ITERATIONS = 310_000
@@ -21,6 +25,107 @@ _TOKEN_BYTES = 32
 
 class AuthError(ValueError):
     pass
+
+
+class BootstrapSecretError(AuthError):
+    """The one-time local setup secret is missing, invalid or already consumed."""
+
+
+def _bootstrap_secret_path() -> Path:
+    configured = os.getenv("SMARTSTOCK_BOOTSTRAP_SECRET_FILE")
+    return Path(configured) if configured else Path(db.DB_PATH).parent / "bootstrap.secret"
+
+
+def read_bootstrap_secret() -> str:
+    """Read the one-time secret for an operator on the trusted host only."""
+    path = _bootstrap_secret_path()
+    try:
+        secret = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise AuthError(
+            "Bootstrap secret is not available. Start the backend once, then read it from the local setup command."
+        ) from exc
+    if not secret or len(secret) > 256:
+        raise AuthError("Bootstrap secret file is invalid; rotate it through the local setup process.")
+    if os.name == "posix" and path.stat().st_mode & 0o077:
+        raise AuthError("Bootstrap secret file permissions are too broad; restrict it to the owner (0600).")
+    return secret
+
+
+def _write_bootstrap_secret(path: Path, secret: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_name = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent,
+            prefix=".bootstrap-secret-", delete=False,
+        ) as handle:
+            temp_name = handle.name
+            os.chmod(temp_name, 0o600)
+            handle.write(secret + "\\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_name, path)
+        if os.name == "posix":
+            os.chmod(path, 0o600)
+    finally:
+        if temp_name and os.path.exists(temp_name):
+            os.unlink(temp_name)
+
+
+def ensure_bootstrap_secret() -> bool:
+    """Create or repair the local one-time secret before serving first-owner setup.
+
+    The plaintext secret is kept in a 0600 file on the persistent local data
+    volume. Only its SHA-256 digest is stored in SQLite. It is never logged or
+    exposed through an HTTP endpoint.
+    """
+    path = _bootstrap_secret_path()
+    remove_file = False
+    created = False
+    with connection() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if conn.execute("SELECT 1 FROM auth_users LIMIT 1").fetchone():
+            remove_file = True
+        else:
+            row = conn.execute(
+                "SELECT secret_sha256, consumed_at FROM auth_bootstrap WHERE id=1"
+            ).fetchone()
+            current = None
+            try:
+                current = path.read_text(encoding="utf-8").strip()
+            except OSError:
+                pass
+            if (
+                row is not None
+                and row["consumed_at"] is None
+                and current
+                and hmac.compare_digest(
+                    hashlib.sha256(current.encode("utf-8")).hexdigest(),
+                    row["secret_sha256"],
+                )
+            ):
+                return False
+
+            secret = secrets.token_urlsafe(32)
+            _write_bootstrap_secret(path, secret)
+            digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
+            conn.execute(
+                """INSERT INTO auth_bootstrap(id,secret_sha256,consumed_at)
+                   VALUES(1,?,NULL)
+                   ON CONFLICT(id) DO UPDATE SET
+                     secret_sha256=excluded.secret_sha256,
+                     consumed_at=NULL,
+                     created_at=CURRENT_TIMESTAMP""",
+                (digest,),
+            )
+            created = True
+    if remove_file:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return created
 
 
 def _password_hash(password: str, salt: bytes) -> bytes:
@@ -40,7 +145,7 @@ def owner_exists() -> bool:
         return conn.execute("SELECT 1 FROM auth_users LIMIT 1").fetchone() is not None
 
 
-def create_first_owner(username: Any, password: Any) -> dict:
+def create_first_owner(username: Any, password: Any, bootstrap_secret: Any) -> dict:
     if not isinstance(username, str):
         raise AuthError("Tên đăng nhập không hợp lệ.")
     username = username.strip().lower()
@@ -48,15 +153,39 @@ def create_first_owner(username: Any, password: Any) -> dict:
         raise AuthError("Tên đăng nhập phải dài 3–40 ký tự, chỉ gồm chữ, số, _ hoặc -.")
     password = _validate_password(password)
     salt = secrets.token_bytes(16)
+    if not isinstance(bootstrap_secret, str) or not 32 <= len(bootstrap_secret) <= 256:
+        raise BootstrapSecretError("Bootstrap secret không hợp lệ hoặc đã được sử dụng.")
+    bootstrap_digest = hashlib.sha256(bootstrap_secret.encode("utf-8")).hexdigest()
     digest = _password_hash(password, salt)
     with connection() as conn:
         conn.execute("BEGIN IMMEDIATE")
         if conn.execute("SELECT 1 FROM auth_users LIMIT 1").fetchone():
             raise AuthError("Tài khoản chủ sở hữu đã được khởi tạo; không cho phép đăng ký thêm.")
+        bootstrap = conn.execute(
+            "SELECT secret_sha256,consumed_at FROM auth_bootstrap WHERE id=1"
+        ).fetchone()
+        if (
+            bootstrap is None
+            or bootstrap["consumed_at"] is not None
+            or not hmac.compare_digest(bootstrap_digest, bootstrap["secret_sha256"])
+        ):
+            raise BootstrapSecretError("Bootstrap secret không hợp lệ hoặc đã được sử dụng.")
+        consumed = conn.execute(
+            """UPDATE auth_bootstrap SET consumed_at=CURRENT_TIMESTAMP
+               WHERE id=1 AND consumed_at IS NULL AND secret_sha256=?""",
+            (bootstrap_digest,),
+        )
+        if consumed.rowcount != 1:
+            raise BootstrapSecretError("Bootstrap secret không hợp lệ hoặc đã được sử dụng.")
         conn.execute(
             "INSERT INTO auth_users(username,password_salt,password_hash,password_iterations) VALUES(?,?,?,?)",
             (username, salt.hex(), digest.hex(), _ITERATIONS),
         )
+    try:
+        _bootstrap_secret_path().unlink(missing_ok=True)
+    except OSError:
+        # The consumed marker in SQLite prevents replay even if cleanup fails.
+        pass
     return {"username": username, "role": "owner"}
 
 
