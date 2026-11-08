@@ -273,7 +273,7 @@ class TrainingReviewApiTests(unittest.TestCase):
         conn.execute("""
             INSERT INTO training_examples
                 (id,question,expected_answer,topic,citation_ids,status,created_at,updated_at)
-            VALUES(7,'Câu hỏi cũ','Câu trả lời cũ đủ dài để giữ nguyên','elliott','[""kb:1:0""]',
+            VALUES(7,'Câu hỏi cũ','Câu trả lời cũ đủ dài để giữ nguyên','elliott','["kb:1:0"]',
                    'approved','2026-01-01T00:00:00','2026-01-02T00:00:00')
         """)
         conn.commit()
