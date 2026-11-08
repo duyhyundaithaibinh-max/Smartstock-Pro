@@ -97,6 +97,25 @@ def init_db():
             added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(symbol) REFERENCES symbols(symbol) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS auth_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            password_salt TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            password_iterations INTEGER NOT NULL CHECK(password_iterations >= 100000),
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS auth_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token_sha256 TEXT NOT NULL UNIQUE,
+            expires_at TEXT NOT NULL,
+            revoked_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES auth_users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_auth_sessions_expiry
+            ON auth_sessions(expires_at, revoked_at);
         CREATE TABLE IF NOT EXISTS training_examples (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             question TEXT NOT NULL,
