@@ -108,13 +108,18 @@ class _DashboardPageState extends State<DashboardPage> {
     setState(() { _authStatusLoaded = false; _error = null; });
     try {
       final response = await _httpClient.get(Uri.parse('$_baseUrl/api/v1/auth/status')).timeout(const Duration(seconds: 8));
-      if (response.statusCode != 200) throw Exception('Backend trả về HTTP ${response.statusCode}');
+      if (response.statusCode != 200) {
+        throw SafeApiException('Backend không thể kiểm tra trạng thái (HTTP ${response.statusCode}).');
+      }
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
       if (!mounted) return;
       setState(() { _ownerInitialized = payload['owner_initialized'] == true; _authStatusLoaded = true; });
     } catch (error) {
       if (!mounted) return;
-      setState(() { _authStatusLoaded = true; _error = 'Không kiểm tra được backend: $error'; });
+      setState(() {
+        _authStatusLoaded = true;
+        _error = 'Không kiểm tra được backend: ${safeApiErrorMessage(error, fallback: 'Vui lòng kiểm tra địa chỉ backend và thử lại.')}';
+      });
     }
   }
 
@@ -124,41 +129,51 @@ class _DashboardPageState extends State<DashboardPage> {
     try {
       final username = _usernameController.text.trim();
       final password = _passwordController.text;
-      if (username.isEmpty || password.isEmpty) throw Exception('Nhập tên đăng nhập và mật khẩu.');
+      if (username.isEmpty || password.isEmpty) throw const SafeApiException('Nhập tên đăng nhập và mật khẩu.');
       final secret = _bootstrapSecretController.text.trim();
-      if (register && password.length < 12) throw Exception('Mật khẩu cần tối thiểu 12 ký tự.');
-      if (register && (secret.length < 32 || secret.length > 256)) throw Exception('Bootstrap secret cần từ 32 đến 256 ký tự.');
+      if (register && password.length < 12) throw const SafeApiException('Mật khẩu cần tối thiểu 12 ký tự.');
+      if (register && (secret.length < 32 || secret.length > 256)) throw const SafeApiException('Bootstrap secret cần từ 32 đến 256 ký tự.');
       if (register) {
         final setup = await _httpClient.post(Uri.parse('$_baseUrl/api/v1/auth/register-first-owner'), headers: {'Content-Type': 'application/json'}, body: jsonEncode({'username': username, 'password': password, 'bootstrap_secret': secret})).timeout(const Duration(seconds: 15));
         if (setup.statusCode != 201) {
           if (setup.statusCode == 403) {
-            throw Exception('Bootstrap secret không đúng hoặc đã được sử dụng.');
+            throw const SafeApiException('Bootstrap secret không đúng hoặc đã được sử dụng.');
           }
           if (setup.statusCode == 409) {
             _bootstrapSecretController.clear();
             if (mounted) setState(() => _ownerInitialized = true);
-            throw Exception(
+            throw const SafeApiException(
               'Tài khoản chủ sở hữu đã được khởi tạo. Hãy đăng nhập hoặc kiểm tra trạng thái backend.',
             );
           }
           if (setup.statusCode == 422) {
-            throw Exception('Thông tin khởi tạo chưa hợp lệ.');
+            throw const SafeApiException('Thông tin khởi tạo chưa hợp lệ.');
           }
-          throw Exception('Không khởi tạo được tài khoản (HTTP ${setup.statusCode}).');
+          throw const SafeApiException('Không khởi tạo được tài khoản. Vui lòng thử lại.');
         }
         _bootstrapSecretController.clear();
       }
       final response = await _httpClient.post(Uri.parse('$_baseUrl/api/v1/auth/login'), headers: {'Content-Type': 'application/json'}, body: jsonEncode({'username': username, 'password': password})).timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200) throw Exception('Đăng nhập thất bại (HTTP ${response.statusCode}).');
+      if (response.statusCode == 401) {
+        throw const SafeApiException('Tên đăng nhập hoặc mật khẩu không đúng.');
+      }
+      if (response.statusCode != 200) {
+        throw SafeApiException('Không đăng nhập được (HTTP ${response.statusCode}). Vui lòng thử lại.');
+      }
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
       final token = payload['access_token']?.toString();
-      if (token == null || token.isEmpty) throw Exception('Backend không trả access token hợp lệ.');
+      if (token == null || token.isEmpty) throw const SafeApiException('Backend không trả access token hợp lệ.');
       if (!mounted) return;
       setState(() { _accessToken = token; _sessionExpired = false; _ownerInitialized = true; });
       _passwordController.clear();
       await _connect();
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) {
+        setState(() => _error = safeApiErrorMessage(
+          error,
+          fallback: 'Không thể đăng nhập. Vui lòng kiểm tra thông tin và kết nối máy chủ.',
+        ));
+      }
     } finally {
       if (mounted) setState(() => _authLoading = false);
     }
