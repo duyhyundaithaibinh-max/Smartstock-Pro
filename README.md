@@ -103,3 +103,10 @@ Nến tuần/tháng chỉ tổng hợp từ các phiên ngày có sẵn; hệ th
 - Body: `{"predictions":[{"example_id":1,"answer":"...","citation_ids":["kb:1:0"]}]}`.
 - Chỉ chấm trên ví dụ `approved`; báo exact match, token precision/recall/F1, độ chính xác/độ bao phủ citation, citation ID không hợp lệ và coverage trên tập đã duyệt.
 - Endpoint không gọi model, không fine-tune, không dùng mạng hoặc API trả phí. Đây là bộ chấm tự động cơ bản; token overlap không đo được tính đúng ngữ nghĩa và citation hợp lệ về ID chưa chứng minh nội dung thực sự hỗ trợ câu trả lời. Cần holdout set và con người rà soát.
+
+### Nạp corpus và ví dụ mẫu vào SQLite
+Tại thư mục `backend/`, sau khi cài dependencies:
+```bash
+python -m scripts.ingest_curriculum
+```
+Script nạp 5 tài liệu Markdown và tạo tối đa 15 ví dụ hỏi–đáp ở trạng thái `draft`; có thể chạy lại an toàn (bỏ qua tài liệu/câu hỏi đã có). Citation ID được ghép theo chunk thực tế của từng tài liệu trong database. Người dùng phải đọc nguồn, rà soát câu trả lời và bấm **Duyệt** trong Training Room trước khi xuất JSONL. Script chỉ ghi SQLite cục bộ, không tải dữ liệu từ Internet.
