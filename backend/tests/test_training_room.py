@@ -67,6 +67,23 @@ class TrainingRoomTests(unittest.TestCase):
 
         self.assertEqual(transaction_states, [True])
 
+    def test_approval_locks_database_before_validating_citations(self):
+        draft = training_room.create_example(self._payload())
+        original = training_room._citation_exists
+        transaction_states = []
+
+        def assert_transaction_started(conn, citation):
+            transaction_states.append(conn.in_transaction)
+            return original(conn, citation)
+
+        with patch.object(
+            training_room, "_citation_exists", side_effect=assert_transaction_started
+        ):
+            approved = training_room.approve_example(draft["id"])
+
+        self.assertEqual(approved["status"], "approved")
+        self.assertEqual(transaction_states, [True])
+
     def test_rejects_nonexistent_source_citation(self):
         payload = self._payload()
         payload["citation_ids"] = ["kb:999:0"]
@@ -121,6 +138,24 @@ class TrainingRoomTests(unittest.TestCase):
         self.assertEqual(report["approved_examples"], 0)
         self.assertEqual(report["duplicate_question_groups"], 1)
         self.assertEqual(report["readiness"], "collect_and_review_more_examples")
+
+    def test_export_and_evaluation_validate_citations_in_read_transactions(self):
+        draft = market.create_training_example(self._payload())
+        market.approve_training_example(draft["id"])
+        original = training_room._citation_exists
+        transaction_states = []
+
+        def assert_transaction_started(conn, citation):
+            transaction_states.append(conn.in_transaction)
+            return original(conn, citation)
+
+        with patch.object(
+            training_room, "_citation_exists", side_effect=assert_transaction_started
+        ):
+            self.assertEqual(training_room.export_approved_jsonl()["count"], 1)
+            training_room.evaluate_dataset()
+
+        self.assertEqual(transaction_states, [True, True])
 
     def test_api_listing_filters_status(self):
         market.create_training_example(self._payload())
