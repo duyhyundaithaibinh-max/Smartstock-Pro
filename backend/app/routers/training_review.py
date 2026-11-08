@@ -36,7 +36,7 @@ class ReviewEventItem(BaseModel):
     revision_from: int
     revision_to: int
     changed_fields: list[str]
-    reviewer_user_id: int
+    reviewer_user_id: int | None
     reviewer_label: str
     created_at: str
 
