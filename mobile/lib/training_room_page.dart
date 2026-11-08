@@ -57,19 +57,21 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   Future<void> _pickAndUpload() async {
     if (_uploading) return;
     try {
-      final selection = await FilePicker.platform.pickFiles(
+      final file = await FilePicker.pickFile(
         type: FileType.custom,
         allowedExtensions: const ['txt', 'md', 'csv', 'pdf'],
-        withData: true,
       );
-      if (selection == null || selection.files.isEmpty) return;
-      final file = selection.files.single;
-      final bytes = file.bytes;
-      if (bytes == null || bytes.isEmpty) {
-        throw Exception('Không đọc được nội dung tệp trên thiết bị.');
+      if (file == null) return;
+      final fileLength = file.lengthSync() ?? await file.length();
+      if (fileLength == null || fileLength <= 0) {
+        throw Exception('Không đọc được kích thước tệp trên thiết bị.');
       }
-      if (bytes.length > 10 * 1024 * 1024) {
+      if (fileLength > 10 * 1024 * 1024) {
         throw Exception('Tệp vượt quá giới hạn 10 MB.');
+      }
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty) {
+        throw Exception('Không đọc được nội dung tệp trên thiết bị.');
       }
 
       setState(() {
