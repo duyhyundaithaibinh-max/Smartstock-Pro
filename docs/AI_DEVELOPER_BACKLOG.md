@@ -45,3 +45,9 @@ Agent xử lý **một mục mỗi lượt chạy**, theo thứ tự ưu tiên. 
 ## Quy tắc chọn việc
 
 Chọn mục chưa hoàn thành có mã nhỏ nhất và ưu tiên cao nhất. Nếu mục đó bị chặn bởi thiếu dữ liệu, API, quyền hoặc quyết định sản phẩm, không tự đoán; ghi rõ blocker trong PR và chuyển sang mục tiếp theo chỉ khi không làm sai lệch thứ tự phụ thuộc.
+
+## Xác nhận CI và bản build Android (08/11/2026)
+- PR #3, head commit `0e4ca186b9c6a51fe6e4a81ad4826a9737ecbb13`, workflow run `42431836190`: backend job **success** (111 tests); Android job **success** (Flutter analyze, Flutter tests, debug APK build và upload artifact).
+- Artifact `smartstock-pro-debug-apk`, artifact ID `13598316184`; đã tải và xác minh ZIP chứa `app-debug.apk` (khoảng 150 MB). Đây là debug build để cài thử, chưa phải release ký số.
+- CI này xác nhận chất lượng kiểm thử/build trên runner, không thay thế kiểm thử cài đặt trên thiết bị Android thực tế.
+- PR vẫn mở, chưa merge. SP-015, SP-016, SP-017 vẫn là các nền tảng đang triển khai; không đánh dấu hoàn tất chỉ vì CI xanh.
