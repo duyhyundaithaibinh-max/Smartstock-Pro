@@ -512,6 +512,8 @@ def approve_training_example(example_id: int):
     """Human-approve an example only while all cited source chunks still exist."""
     try:
         result = training_room.approve_example(example_id)
+    except training_room.TrainingConflictError as exc:
+        raise HTTPException(409, str(exc)) from exc
     except training_room.TrainingDataError as exc:
         raise HTTPException(422, str(exc)) from exc
     if result is None:
