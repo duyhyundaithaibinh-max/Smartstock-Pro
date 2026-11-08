@@ -92,8 +92,10 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVE
     """Split text deterministically, preferring paragraph/line boundaries."""
     if chunk_size < 100 or overlap < 0 or overlap >= chunk_size:
         raise ValueError("Invalid chunk size or overlap")
-    normalized = text.replace("\r\n", "\n").replace("\r", "\n").strip()
-    if not normalized:
+    # Preserve the exact extracted-text coordinate system for citation offsets.
+    # Newline normalization or stripping here would make offsets drift from source.
+    normalized = text
+    if not normalized.strip():
         return []
 
     chunks = []
