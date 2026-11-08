@@ -160,10 +160,10 @@ def analyze_price_action(
     resistance_level = round(prior_high, 4)
     support_level = round(prior_low, 4)
     if breakout_state == "confirmed_bullish":
-        confirmation = f"Đóng cửa cao hơn {resistance_level} ít nhất 0,2 ATR và volume >= {volume_threshold:.2f} lần trung bình {prior_count} nến."
+        confirmation = f"Đóng cửa cao hơn {resistance_level} ít nhất {breakout_buffer_atr_pct / 100:.2f} ATR và volume >= {volume_threshold:.2f} lần trung bình {prior_count} nến."
         invalidation = f"Đóng cửa quay xuống dưới vùng breakout {resistance_level}; cần đánh giá lại breakout."
     elif breakout_state == "confirmed_bearish":
-        confirmation = f"Đóng cửa thấp hơn {support_level} ít nhất 0,2 ATR và volume >= {volume_threshold:.2f} lần trung bình {prior_count} nến."
+        confirmation = f"Đóng cửa thấp hơn {support_level} ít nhất {breakout_buffer_atr_pct / 100:.2f} ATR và volume >= {volume_threshold:.2f} lần trung bình {prior_count} nến."
         invalidation = f"Đóng cửa quay lên trên vùng breakdown {support_level}; cần đánh giá lại breakdown."
     else:
         confirmation = f"Chờ đóng cửa vượt {resistance_level} hoặc thủng {support_level} với biên tối thiểu 0,2 ATR và volume >= {volume_threshold:.2f} lần trung bình {prior_count} nến."
@@ -207,6 +207,6 @@ def analyze_price_action(
             "Kết quả là phép tính xác định từ OHLCV được cung cấp, không phải khuyến nghị mua bán.",
             "Chưa tự điều chỉnh giá cho cổ tức, thưởng cổ phiếu hoặc quyền mua.",
             "Pivot cần các nến xác nhận phía sau nên vùng giá có độ trễ.",
-            "Volume chỉ xác nhận tương đối so với 20 nến trước; không đại diện dòng tiền tổ chức.",
+            "Volume chỉ xác nhận tương đối so với số nến tham chiếu được cấu hình; không đại diện dòng tiền tổ chức.",
         ],
     }
