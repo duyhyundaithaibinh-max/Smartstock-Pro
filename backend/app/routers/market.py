@@ -2,7 +2,7 @@ import csv
 import io
 from typing import Annotated
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Body
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Body, Request
 from pydantic import ValidationError
 from ..db import connection
 from ..schemas import SymbolCreate, Candle
@@ -508,10 +508,20 @@ def create_training_example(payload: dict = Body(...)):
         raise HTTPException(422, str(exc)) from exc
 
 @router.post("/training/examples/{example_id}/approve")
-def approve_training_example(example_id: int):
-    """Human-approve an example only while all cited source chunks still exist."""
+def approve_training_example(example_id: int, request: Request = None):
+    """Approve a draft and atomically append an audit event without breaking legacy auth."""
+    user = (getattr(request.state, "user", None) or {}) if request is not None else {}
+    reviewer_id = user.get("id")
+    if type(reviewer_id) is int and reviewer_id > 0:
+        reviewer_label = "Owner"
+    elif request is not None:
+        reviewer_id = None
+        reviewer_label = "Legacy shared token"
+    else:
+        reviewer_id = None
+        reviewer_label = "System"
     try:
-        result = training_room.approve_example(example_id)
+        result = training_room.approve_example(example_id, reviewer_id, reviewer_label)
     except training_room.TrainingConflictError as exc:
         raise HTTPException(409, str(exc)) from exc
     except training_room.TrainingDataError as exc:

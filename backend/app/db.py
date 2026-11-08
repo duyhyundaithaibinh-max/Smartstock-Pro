@@ -31,13 +31,14 @@ def connection():
 
 
 def _migrate_training_review(conn: sqlite3.Connection) -> None:
-    """Migrate training examples to draft/approved/rejected and add append-only review tables."""
-    row = conn.execute(
+    """Atomically migrate training review schema; safe to retry after rollback."""
+    conn.execute("BEGIN IMMEDIATE")
+    example = conn.execute(
         "SELECT sql FROM sqlite_master WHERE type='table' AND name='training_examples'"
     ).fetchone()
-    if row is not None and "'rejected'" not in (row["sql"] or ""):
-        conn.commit()
-        conn.execute("BEGIN IMMEDIATE")
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(training_examples)")}
+    if example is not None and ("'rejected'" not in (example["sql"] or "") or "revision" not in columns):
+        conn.execute("DROP INDEX IF EXISTS idx_training_examples_status_created")
         conn.execute("""
             CREATE TABLE training_examples_new (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,43 +52,76 @@ def _migrate_training_review(conn: sqlite3.Connection) -> None:
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        conn.execute("""
+        revision_expr = "revision" if "revision" in columns else "1"
+        conn.execute(f"""
             INSERT INTO training_examples_new
                 (id,question,expected_answer,topic,citation_ids,status,revision,created_at,updated_at)
-            SELECT id,question,expected_answer,topic,citation_ids,status,1,created_at,updated_at
+            SELECT id,question,expected_answer,topic,citation_ids,status,{revision_expr},created_at,updated_at
             FROM training_examples
         """)
         conn.execute("DROP TABLE training_examples")
         conn.execute("ALTER TABLE training_examples_new RENAME TO training_examples")
-        conn.execute("CREATE INDEX idx_training_examples_status_created ON training_examples(status, created_at)")
-        conn.commit()
+        conn.execute(
+            "CREATE INDEX idx_training_examples_status_created ON training_examples(status, created_at)"
+        )
 
-    conn.executescript("""
-        BEGIN IMMEDIATE;
-        CREATE TABLE IF NOT EXISTS training_example_review_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            example_id INTEGER NOT NULL,
-            action TEXT NOT NULL CHECK(action IN ('rejected','edited')),
-            reason TEXT,
-            revision_from INTEGER NOT NULL CHECK(revision_from >= 1),
-            revision_to INTEGER NOT NULL CHECK(revision_to >= revision_from),
-            changed_fields TEXT NOT NULL DEFAULT '[]',
-            reviewer_user_id INTEGER NOT NULL,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(example_id) REFERENCES training_examples(id) ON DELETE CASCADE,
-            FOREIGN KEY(reviewer_user_id) REFERENCES auth_users(id) ON DELETE RESTRICT,
-            CHECK((action='rejected' AND reason IS NOT NULL AND revision_to=revision_from)
-               OR (action='edited' AND reason IS NULL AND revision_to=revision_from+1))
-        );
+    event = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='training_example_review_events'"
+    ).fetchone()
+    event_columns = {row["name"] for row in conn.execute("PRAGMA table_info(training_example_review_events)")}
+    if event is None or "'approved'" not in (event["sql"] or "") or "reviewer_label" not in event_columns:
+        old_exists = event is not None
+        conn.execute("DROP TRIGGER IF EXISTS trg_training_review_events_no_update")
+        conn.execute("DROP TRIGGER IF EXISTS trg_training_review_events_no_delete")
+        conn.execute("DROP INDEX IF EXISTS idx_training_review_events_example")
+        if old_exists:
+            conn.execute("ALTER TABLE training_example_review_events RENAME TO training_example_review_events_old")
+        conn.execute("""
+            CREATE TABLE training_example_review_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                example_id INTEGER NOT NULL,
+                action TEXT NOT NULL CHECK(action IN ('approved','rejected','edited')),
+                reason TEXT,
+                revision_from INTEGER NOT NULL CHECK(revision_from >= 1),
+                revision_to INTEGER NOT NULL CHECK(revision_to >= revision_from),
+                changed_fields TEXT NOT NULL DEFAULT '[]',
+                reviewer_user_id INTEGER,
+                reviewer_label TEXT NOT NULL CHECK(length(trim(reviewer_label)) > 0),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(example_id) REFERENCES training_examples(id) ON DELETE CASCADE,
+                FOREIGN KEY(reviewer_user_id) REFERENCES auth_users(id) ON DELETE RESTRICT,
+                CHECK((action IN ('approved','rejected') AND revision_to=revision_from
+                       AND ((action='approved' AND reason IS NULL) OR
+                            (action='rejected' AND reason IS NOT NULL)))
+                   OR (action='edited' AND reason IS NULL AND revision_to=revision_from+1))
+            )
+        """)
+        if old_exists:
+            conn.execute("""
+                INSERT INTO training_example_review_events
+                    (id,example_id,action,reason,revision_from,revision_to,changed_fields,
+                     reviewer_user_id,reviewer_label,created_at)
+                SELECT id,example_id,action,reason,revision_from,revision_to,changed_fields,
+                       reviewer_user_id,'Owner',created_at
+                FROM training_example_review_events_old
+            """)
+            conn.execute("DROP TABLE training_example_review_events_old")
+    conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_training_review_events_example
-            ON training_example_review_events(example_id, created_at, id);
+        ON training_example_review_events(example_id, id)
+    """)
+    conn.execute("""
         CREATE TRIGGER IF NOT EXISTS trg_training_review_events_no_update
         BEFORE UPDATE ON training_example_review_events
-        BEGIN SELECT RAISE(ABORT, 'training review events are append-only'); END;
+        BEGIN SELECT RAISE(ABORT, 'training review events are append-only'); END
+    """)
+    conn.execute("""
         CREATE TRIGGER IF NOT EXISTS trg_training_review_events_no_delete
         BEFORE DELETE ON training_example_review_events
         WHEN EXISTS (SELECT 1 FROM training_examples WHERE id=OLD.example_id)
-        BEGIN SELECT RAISE(ABORT, 'training review events are append-only'); END;
+        BEGIN SELECT RAISE(ABORT, 'training review events are append-only'); END
+    """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS training_example_quality_reviews (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             example_id INTEGER NOT NULL,
@@ -99,17 +133,22 @@ def _migrate_training_review(conn: sqlite3.Connection) -> None:
             reviewed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(example_id) REFERENCES training_examples(id) ON DELETE CASCADE,
             FOREIGN KEY(reviewer_user_id) REFERENCES auth_users(id) ON DELETE RESTRICT
-        );
+        )
+    """)
+    conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_training_quality_reviews_example
-            ON training_example_quality_reviews(example_id, example_revision, reviewed_at, id);
+        ON training_example_quality_reviews(example_id, example_revision, reviewed_at, id)
+    """)
+    conn.execute("""
         CREATE TRIGGER IF NOT EXISTS trg_training_quality_reviews_no_update
         BEFORE UPDATE ON training_example_quality_reviews
-        BEGIN SELECT RAISE(ABORT, 'training quality reviews are append-only'); END;
+        BEGIN SELECT RAISE(ABORT, 'training quality reviews are append-only'); END
+    """)
+    conn.execute("""
         CREATE TRIGGER IF NOT EXISTS trg_training_quality_reviews_no_delete
         BEFORE DELETE ON training_example_quality_reviews
         WHEN EXISTS (SELECT 1 FROM training_examples WHERE id=OLD.example_id)
-        BEGIN SELECT RAISE(ABORT, 'training quality reviews are append-only'); END;
-        COMMIT;
+        BEGIN SELECT RAISE(ABORT, 'training quality reviews are append-only'); END
     """)
 
 

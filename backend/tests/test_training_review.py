@@ -289,5 +289,454 @@ class TrainingReviewApiTests(unittest.TestCase):
         conn.close()
 
 
+    def test_patch_auth_is_route_specific_for_missing_legacy_and_owner(self):
+        legacy = "legacy-training-review-token-" + "p" * 32
+        with TestClient(app) as client:
+            example = self._create(client)
+            payload = {"expected_revision": 1, "topic": "new-topic"}
+            self.assertEqual(client.patch(
+                f"/api/v1/training/examples/{example['id']}", json=payload
+            ).status_code, 401)
+            with patch.dict(os.environ, {"SMARTSTOCK_API_TOKEN": legacy}):
+                response = client.patch(
+                    f"/api/v1/training/examples/{example['id']}", json=payload,
+                    headers={"Authorization": f"Bearer {legacy}"},
+                )
+            self.assertEqual(response.status_code, 403)
+            owner = client.patch(
+                f"/api/v1/training/examples/{example['id']}", json=payload,
+                headers=self.headers,
+            )
+            self.assertEqual(owner.status_code, 200, owner.text)
+            self.assertEqual(owner.json()["revision"], 2)
+
+    def test_approve_is_audited_and_repeat_approval_conflicts(self):
+        with TestClient(app) as client:
+            example = self._create(client)
+            url = f"/api/v1/training/examples/{example['id']}/approve"
+            approved = client.post(url, headers=self.headers)
+            self.assertEqual(approved.status_code, 200, approved.text)
+            self.assertEqual(client.post(url, headers=self.headers).status_code, 409)
+            history = client.get(
+                f"/api/v1/training/examples/{example['id']}/review-events",
+                headers=self.headers,
+            )
+            self.assertEqual(history.status_code, 200)
+            event = history.json()["items"][0]
+            self.assertEqual(event["action"], "approved")
+            self.assertEqual(event["reviewer_user_id"], 1)
+            self.assertEqual(event["reviewer_label"], "Owner")
+            self.assertEqual(event["revision_from"], 1)
+            self.assertEqual(event["revision_to"], 1)
+
+    def test_review_event_history_is_chronological_paginated_and_owner_only(self):
+        with TestClient(app) as client:
+            example = self._create(client)
+            edit = client.patch(f"/api/v1/training/examples/{example['id']}", json={
+                "expected_revision": 1, "topic": "updated-topic"
+            }, headers=self.headers)
+            self.assertEqual(edit.status_code, 200, edit.text)
+            self.assertEqual(client.post(
+                f"/api/v1/training/examples/{example['id']}/approve",
+                headers=self.headers,
+            ).status_code, 200)
+            url = f"/api/v1/training/examples/{example['id']}/review-events"
+            page1 = client.get(url + "?limit=1&offset=0", headers=self.headers)
+            page2 = client.get(url + "?limit=1&offset=1", headers=self.headers)
+            self.assertEqual(page1.status_code, 200)
+            self.assertEqual(page2.status_code, 200)
+            self.assertEqual(page1.json()["total"], 2)
+            self.assertEqual(page1.json()["items"][0]["action"], "edited")
+            self.assertEqual(page2.json()["items"][0]["action"], "approved")
+            self.assertEqual(page1.json()["items"][0]["changed_fields"], ["topic"])
+            self.assertNotIn("username", page1.text)
+            self.assertNotIn("token", page1.text.lower())
+            empty = self._create(client)
+            empty_history = client.get(
+                f"/api/v1/training/examples/{empty['id']}/review-events",
+                headers=self.headers,
+            )
+            self.assertEqual(empty_history.status_code, 200)
+            self.assertEqual(empty_history.json()["items"], [])
+            self.assertEqual(empty_history.json()["total"], 0)
+            self.assertEqual(client.get(url).status_code, 401)
+            legacy = "legacy-training-review-token-" + "q" * 32
+            with patch.dict(os.environ, {"SMARTSTOCK_API_TOKEN": legacy}):
+                self.assertEqual(client.get(url, headers={
+                    "Authorization": f"Bearer {legacy}"
+                }).status_code, 403)
+            self.assertEqual(client.get(
+                "/api/v1/training/examples/999/review-events", headers=self.headers
+            ).status_code, 404)
+            for query in ("?limit=0", "?limit=101", "?offset=-1"):
+                self.assertEqual(client.get(url + query, headers=self.headers).status_code, 422)
+
+    def test_reject_edit_approve_audit_and_quality_rows_cascade_on_hard_delete(self):
+        with TestClient(app) as client:
+            approved = self._create(client)
+            self.assertEqual(client.patch(
+                f"/api/v1/training/examples/{approved['id']}",
+                json={"expected_revision": 1, "topic": "changed"},
+                headers=self.headers,
+            ).status_code, 200)
+            self.assertEqual(client.post(
+                f"/api/v1/training/examples/{approved['id']}/approve",
+                headers=self.headers,
+            ).status_code, 200)
+            rejected = self._create(client)
+            self.assertEqual(client.post(
+                f"/api/v1/training/examples/{rejected['id']}/reject",
+                json={"reason": "Rejected for cascade test."},
+                headers=self.headers,
+            ).status_code, 200)
+            for item in (approved, rejected):
+                self.assertEqual(client.post(
+                    f"/api/v1/training/examples/{item['id']}/quality-reviews",
+                    json={"score": 100, "rubric_version": "qa-quality-v1",
+                          "rationale": "Maximum score accepted for cascade test."},
+                    headers=self.headers,
+                ).status_code, 201)
+            with db.connection() as conn:
+                self.assertEqual(conn.execute(
+                    "SELECT COUNT(*) FROM training_example_review_events"
+                ).fetchone()[0], 3)
+                self.assertEqual(conn.execute(
+                    "SELECT COUNT(*) FROM training_example_quality_reviews"
+                ).fetchone()[0], 2)
+                with self.assertRaises(sqlite3.IntegrityError):
+                    conn.execute("UPDATE training_example_review_events SET reason='tampered' WHERE id=1")
+                with self.assertRaises(sqlite3.IntegrityError):
+                    conn.execute("DELETE FROM training_example_review_events WHERE id=1")
+                with self.assertRaises(sqlite3.IntegrityError):
+                    conn.execute("UPDATE training_example_quality_reviews SET score=0 WHERE id=1")
+                with self.assertRaises(sqlite3.IntegrityError):
+                    conn.execute("DELETE FROM training_example_quality_reviews WHERE id=1")
+            for item in (approved, rejected):
+                self.assertEqual(client.delete(
+                    f"/api/v1/training/examples/{item['id']}", headers=self.headers
+                ).status_code, 200)
+            with db.connection() as conn:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM training_examples").fetchone()[0], 0)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM training_example_review_events").fetchone()[0], 0)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM training_example_quality_reviews").fetchone()[0], 0)
+
+    def test_approve_audit_failure_rolls_back_status(self):
+        with TestClient(app) as client:
+            example = self._create(client)
+            with db.connection() as conn:
+                conn.execute("""
+                    CREATE TRIGGER fail_approve_event_insert
+                    BEFORE INSERT ON training_example_review_events
+                    WHEN NEW.action='approved'
+                    BEGIN SELECT RAISE(ABORT, 'injected approval audit failure'); END
+                """)
+            with self.assertRaises(sqlite3.IntegrityError):
+                training_room.approve_example(example["id"], 1)
+            with db.connection() as conn:
+                status = conn.execute(
+                    "SELECT status FROM training_examples WHERE id=?", (example["id"],)
+                ).fetchone()["status"]
+                count = conn.execute("SELECT COUNT(*) FROM training_example_review_events").fetchone()[0]
+            self.assertEqual(status, "draft")
+            self.assertEqual(count, 0)
+
+    def test_edit_audit_failure_rolls_back_content_and_revision(self):
+        with TestClient(app) as client:
+            example = self._create(client)
+            with db.connection() as conn:
+                conn.execute("""
+                    CREATE TRIGGER fail_edit_event_insert
+                    BEFORE INSERT ON training_example_review_events
+                    WHEN NEW.action='edited'
+                    BEGIN SELECT RAISE(ABORT, 'injected edit audit failure'); END
+                """)
+            with self.assertRaises(sqlite3.IntegrityError):
+                training_room.edit_draft_example(
+                    example["id"], {"expected_revision": 1, "topic": "must-rollback"}, 1
+                )
+            with db.connection() as conn:
+                row = conn.execute(
+                    "SELECT topic,revision FROM training_examples WHERE id=?", (example["id"],)
+                ).fetchone()
+                count = conn.execute("SELECT COUNT(*) FROM training_example_review_events").fetchone()[0]
+            self.assertEqual(row["topic"], "elliott")
+            self.assertEqual(row["revision"], 1)
+            self.assertEqual(count, 0)
+
+    def test_reject_and_approve_race_has_one_transition_and_one_event(self):
+        with TestClient(app) as client:
+            example = self._create(client)
+            barrier = Barrier(2)
+
+            def approve():
+                barrier.wait()
+                return training_room.approve_example(example["id"], 1)
+
+            def reject():
+                barrier.wait()
+                return training_room.reject_example(example["id"], "Race rejection reason", 1)
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [pool.submit(approve), pool.submit(reject)]
+                outcomes = []
+                for future in futures:
+                    try:
+                        outcomes.append(future.result(timeout=10))
+                    except training_room.TrainingConflictError:
+                        outcomes.append("conflict")
+            self.assertEqual(sum(item != "conflict" for item in outcomes), 1)
+            self.assertEqual(outcomes.count("conflict"), 1)
+            with db.connection() as conn:
+                row = conn.execute(
+                    "SELECT status FROM training_examples WHERE id=?", (example["id"],)
+                ).fetchone()
+                events = conn.execute(
+                    "SELECT action FROM training_example_review_events WHERE example_id=?",
+                    (example["id"],),
+                ).fetchall()
+            self.assertIn(row["status"], ("approved", "rejected"))
+            self.assertEqual(len(events), 1)
+            self.assertEqual(events[0]["action"], row["status"])
+
+    def test_quality_review_accepts_all_existing_statuses_and_does_not_change_evaluator(self):
+        with TestClient(app) as client:
+            draft = self._create(client)
+            approved = self._create(client)
+            rejected = self._create(client)
+            self.assertEqual(client.post(
+                f"/api/v1/training/examples/{approved['id']}/approve",
+                headers=self.headers,
+            ).status_code, 200)
+            self.assertEqual(client.post(
+                f"/api/v1/training/examples/{rejected['id']}/reject",
+                json={"reason": "Rejected but still quality-reviewable."},
+                headers=self.headers,
+            ).status_code, 200)
+            for item, score in ((draft, 0), (approved, 100), (rejected, 50)):
+                response = client.post(
+                    f"/api/v1/training/examples/{item['id']}/quality-reviews",
+                    json={"score": score, "rubric_version": "qa-quality-v1",
+                          "rationale": "Manual review allowed on every current status."},
+                    headers=self.headers,
+                )
+                self.assertEqual(response.status_code, 201, response.text)
+                self.assertEqual(response.json()["score"], score)
+            before = client.get("/api/v1/training/evaluation", headers=self.headers).json()
+            predictions = {"predictions": [{
+                "example_id": approved["id"],
+                "answer": approved["expected_answer"],
+                "citation_ids": [self.citation],
+            }]}
+            evaluator_before = client.post(
+                "/api/v1/training/evaluation/predictions", json=predictions, headers=self.headers
+            ).json()
+            self.assertEqual(client.post(
+                f"/api/v1/training/examples/{draft['id']}/quality-reviews",
+                json={"score": 100, "rubric_version": "qa-quality-v1",
+                      "rationale": "Second append-only review for draft."},
+                headers=self.headers,
+            ).status_code, 201)
+            after = client.get("/api/v1/training/evaluation", headers=self.headers).json()
+            evaluator_after = client.post(
+                "/api/v1/training/evaluation/predictions", json=predictions, headers=self.headers
+            ).json()
+            self.assertEqual(before, after)
+            self.assertEqual(evaluator_before, evaluator_after)
+
+    def test_legacy_migration_preserves_all_fields_is_idempotent_and_rolls_back_on_failure(self):
+        path = Path(self.temp_dir.name) / "legacy-full.db"
+
+        def build_legacy():
+            conn = sqlite3.connect(path)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("CREATE TABLE auth_users(id INTEGER PRIMARY KEY)")
+            conn.execute("""
+                CREATE TABLE training_examples (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    question TEXT NOT NULL,
+                    expected_answer TEXT NOT NULL,
+                    topic TEXT NOT NULL DEFAULT 'general',
+                    citation_ids TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK(status IN ('draft','approved')) DEFAULT 'draft',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("CREATE INDEX idx_training_examples_status_created ON training_examples(status, created_at)")
+            conn.execute("""
+                INSERT INTO training_examples
+                    (id,question,expected_answer,topic,citation_ids,status,created_at,updated_at)
+                VALUES(41,'Unicode câu hỏi','Unicode câu trả lời','chu kỳ','["kb:3:4"]',
+                       'draft','2026-01-01T00:00:00','2026-01-02T00:00:00')
+            """)
+            conn.execute("""
+                INSERT INTO training_examples
+                    (id,question,expected_answer,topic,citation_ids,status,created_at,updated_at)
+                VALUES(42,'Approved question','Approved answer','elliott','["kb:4:2"]',
+                       'approved','2026-02-01T00:00:00','2026-02-02T00:00:00')
+            """)
+            conn.commit()
+            return conn
+
+        conn = build_legacy()
+
+        def authorizer(action, arg1, arg2, database, trigger):
+            if action == sqlite3.SQLITE_CREATE_INDEX and arg1 == "idx_training_examples_status_created":
+                return sqlite3.SQLITE_DENY
+            return sqlite3.SQLITE_OK
+
+        conn.set_authorizer(authorizer)
+        with self.assertRaises(sqlite3.DatabaseError):
+            db._migrate_training_review(conn)
+        conn.set_authorizer(None)
+        conn.rollback()
+        old_sql = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='training_examples'"
+        ).fetchone()["sql"]
+        self.assertNotIn("'rejected'", old_sql)
+        self.assertNotIn("revision", [x["name"] for x in conn.execute("PRAGMA table_info(training_examples)")])
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM training_examples").fetchone()[0], 2)
+
+        db._migrate_training_review(conn)
+        conn.commit()
+        rows = conn.execute("SELECT * FROM training_examples ORDER BY id").fetchall()
+        self.assertEqual([row["id"] for row in rows], [41, 42])
+        self.assertEqual(rows[0]["question"], "Unicode câu hỏi")
+        self.assertEqual(rows[0]["expected_answer"], "Unicode câu trả lời")
+        self.assertEqual(rows[0]["topic"], "chu kỳ")
+        self.assertEqual(rows[0]["citation_ids"], '["kb:3:4"]')
+        self.assertEqual(rows[0]["status"], "draft")
+        self.assertEqual(rows[0]["created_at"], "2026-01-01T00:00:00")
+        self.assertEqual(rows[0]["updated_at"], "2026-01-02T00:00:00")
+        self.assertEqual([row["revision"] for row in rows], [1, 1])
+        self.assertEqual(rows[1]["question"], "Approved question")
+        self.assertEqual(rows[1]["expected_answer"], "Approved answer")
+        self.assertEqual(rows[1]["topic"], "elliott")
+        self.assertEqual(rows[1]["citation_ids"], '["kb:4:2"]')
+        self.assertEqual(rows[1]["status"], "approved")
+        self.assertEqual(rows[1]["created_at"], "2026-02-01T00:00:00")
+        self.assertEqual(rows[1]["updated_at"], "2026-02-02T00:00:00")
+        self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+        index_names = {row["name"] for row in conn.execute("PRAGMA index_list(training_examples)")}
+        self.assertIn("idx_training_examples_status_created", index_names)
+        event_indexes = {row["name"] for row in conn.execute("PRAGMA index_list(training_example_review_events)")}
+        self.assertIn("idx_training_review_events_example", event_indexes)
+        quality_indexes = {row["name"] for row in conn.execute("PRAGMA index_list(training_example_quality_reviews)")}
+        self.assertIn("idx_training_quality_reviews_example", quality_indexes)
+        trigger_names = {row["name"] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='trigger'"
+        )}
+        self.assertTrue({
+            "trg_training_review_events_no_update", "trg_training_review_events_no_delete",
+            "trg_training_quality_reviews_no_update", "trg_training_quality_reviews_no_delete",
+        }.issubset(trigger_names))
+        snapshot = [tuple(row) for row in rows]
+        db._migrate_training_review(conn)
+        conn.commit()
+        self.assertEqual(snapshot, [tuple(row) for row in conn.execute(
+            "SELECT * FROM training_examples ORDER BY id"
+        )])
+        self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+        conn.close()
+        with patch("app.db.DB_PATH", str(path)):
+            db.init_db()
+            db.init_db()
+        check = sqlite3.connect(path)
+        self.assertEqual(check.execute("SELECT COUNT(*) FROM training_examples").fetchone()[0], 2)
+        check.close()
+
+
+    def test_pr25_event_schema_migration_preserves_existing_events_without_backfill(self):
+        path = Path(self.temp_dir.name) / "pr25-review.db"
+        conn = sqlite3.connect(path)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("CREATE TABLE auth_users(id INTEGER PRIMARY KEY)")
+        conn.execute("INSERT INTO auth_users(id) VALUES(1)")
+        conn.execute("""
+            CREATE TABLE training_examples (
+                id INTEGER PRIMARY KEY,
+                question TEXT NOT NULL,
+                expected_answer TEXT NOT NULL,
+                topic TEXT NOT NULL,
+                citation_ids TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('draft','approved','rejected')),
+                revision INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            INSERT INTO training_examples VALUES
+                (51,'Approved legacy example','Answer body','topic','["kb:1:0"]',
+                 'approved',1,'2026-03-01','2026-03-02')
+        """)
+        conn.execute("""
+            CREATE TABLE training_example_review_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                example_id INTEGER NOT NULL,
+                action TEXT NOT NULL CHECK(action IN ('rejected','edited')),
+                reason TEXT,
+                revision_from INTEGER NOT NULL,
+                revision_to INTEGER NOT NULL,
+                changed_fields TEXT NOT NULL DEFAULT '[]',
+                reviewer_user_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(example_id) REFERENCES training_examples(id) ON DELETE CASCADE,
+                FOREIGN KEY(reviewer_user_id) REFERENCES auth_users(id) ON DELETE RESTRICT
+            )
+        """)
+        conn.execute("""
+            INSERT INTO training_example_review_events
+                (id,example_id,action,reason,revision_from,revision_to,changed_fields,
+                 reviewer_user_id,created_at)
+            VALUES(71,51,'edited',NULL,1,2,'["topic"]',1,'2026-03-03')
+        """)
+        conn.commit()
+        db._migrate_training_review(conn)
+        conn.commit()
+        event = conn.execute(
+            "SELECT * FROM training_example_review_events WHERE id=71"
+        ).fetchone()
+        self.assertEqual(event["action"], "edited")
+        self.assertEqual(event["changed_fields"], '["topic"]')
+        self.assertEqual(event["created_at"], "2026-03-03")
+        self.assertEqual(conn.execute(
+            "SELECT COUNT(*) FROM training_example_review_events WHERE action='approved'"
+        ).fetchone()[0], 0, "migration must not fabricate historical approval events")
+        conn.execute("""
+            INSERT INTO training_example_review_events
+                (example_id,action,reason,revision_from,revision_to,changed_fields,reviewer_user_id,reviewer_label)
+            VALUES(51,'approved',NULL,1,1,'[]',1,'Owner')
+        """)
+        self.assertEqual(conn.execute(
+            "SELECT COUNT(*) FROM training_example_review_events"
+        ).fetchone()[0], 2)
+        conn.commit()
+        self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+        conn.close()
+
+
+    def test_legacy_shared_token_approval_is_compatible_and_audited(self):
+        legacy = "legacy-training-review-token-" + "a" * 40
+        with TestClient(app) as client:
+            example = self._create(client)
+            with patch.dict(os.environ, {"SMARTSTOCK_API_TOKEN": legacy}):
+                response = client.post(
+                    f"/api/v1/training/examples/{example['id']}/approve",
+                    headers={"Authorization": f"Bearer {legacy}"},
+                )
+            self.assertEqual(response.status_code, 200, response.text)
+            history = client.get(
+                f"/api/v1/training/examples/{example['id']}/review-events",
+                headers=self.headers,
+            )
+            self.assertEqual(history.status_code, 200)
+            event = history.json()["items"][0]
+            self.assertIsNone(event["reviewer_user_id"])
+            self.assertEqual(event["reviewer_label"], "Legacy shared token")
+
+
 if __name__ == "__main__":
     unittest.main()

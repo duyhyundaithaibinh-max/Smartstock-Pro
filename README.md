@@ -115,3 +115,11 @@ Tại thư mục `backend/`, sau khi cài dependencies:
 python -m scripts.ingest_curriculum
 ```
 Script nạp 5 tài liệu Markdown và tạo tối đa 15 ví dụ hỏi–đáp ở trạng thái `draft`; có thể chạy lại an toàn (bỏ qua tài liệu/câu hỏi đã có). Citation ID được ghép theo chunk thực tế của từng tài liệu trong database. Người dùng phải đọc nguồn, rà soát câu trả lời và bấm **Duyệt** trong Training Room trước khi xuất JSONL. Script chỉ ghi SQLite cục bộ, không tải dữ liệu từ Internet.
+
+
+## Training review audit API (SP-022)
+- API contract and request/response examples: [docs/training-review-api.md](docs/training-review-api.md).
+- GET /api/v1/training/examples/{id}/review-events?limit=50&offset=0 returns chronological, paginated approved / rejected / edited events. Reviewer is derived from server context; owner approvals expose the owner ID and generic Owner label. The existing approve route keeps legacy shared-token compatibility and records a null reviewer ID with the Legacy shared token label.
+- Approval status change and audit insert are atomic. Existing approved rows are preserved without fabricated historic events.
+- Manual quality review remains a separate append-only history, allowed on draft/approved/rejected examples, and does not change readiness or prediction-evaluator metrics.
+- DELETE retains hard-delete behavior; dependent audit and quality rows cascade. See the API contract for auth/status codes and pagination details.
