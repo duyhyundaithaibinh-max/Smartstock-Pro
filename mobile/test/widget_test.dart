@@ -697,19 +697,21 @@ void main() {
     final client = MockClient((request) async => http.Response(
       '<html>STOCK-DETAIL-PRIVATE-TRACEBACK</html>', 401,
     ));
-    await tester.pumpWidget(MaterialApp(
-      home: StockDetailPage(
-        baseUrl: 'http://test',
-        symbol: 'FPT',
-        apiToken: _token,
-        onSessionExpired: (token) => expiredToken = token,
-      ),
-    ));
-    await tester.pumpAndSettle();
+    await http.runWithClient(() async {
+      await tester.pumpWidget(MaterialApp(
+        home: StockDetailPage(
+          baseUrl: 'http://test',
+          symbol: 'FPT',
+          apiToken: _token,
+          onSessionExpired: (token) => expiredToken = token,
+        ),
+      ));
+      await tester.pumpAndSettle();
 
-    expect(expiredToken, _token);
-    expect(find.textContaining('STOCK-DETAIL-PRIVATE-TRACEBACK'), findsNothing);
-    await tester.pumpWidget(const SizedBox.shrink());
+      expect(expiredToken, _token);
+      expect(find.textContaining('STOCK-DETAIL-PRIVATE-TRACEBACK'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    }, () => client);
     client.close();
   });
 
@@ -719,19 +721,21 @@ void main() {
     final client = MockClient((request) async => http.Response(
       '<html>ANALYSIS-PRIVATE-TRACEBACK</html>', 401,
     ));
-    await tester.pumpWidget(MaterialApp(
-      home: AnalysisPage(
-        baseUrl: 'http://test',
-        symbol: 'FPT',
-        apiToken: _token,
-        onSessionExpired: (token) => expiredToken = token,
-      ),
-    ));
-    await tester.pumpAndSettle();
+    await http.runWithClient(() async {
+      await tester.pumpWidget(MaterialApp(
+        home: AnalysisPage(
+          baseUrl: 'http://test',
+          symbol: 'FPT',
+          apiToken: _token,
+          onSessionExpired: (token) => expiredToken = token,
+        ),
+      ));
+      await tester.pumpAndSettle();
 
-    expect(expiredToken, _token);
-    expect(find.textContaining('ANALYSIS-PRIVATE-TRACEBACK'), findsNothing);
-    await tester.pumpWidget(const SizedBox.shrink());
+      expect(expiredToken, _token);
+      expect(find.textContaining('ANALYSIS-PRIVATE-TRACEBACK'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    }, () => client);
     client.close();
   });
 
