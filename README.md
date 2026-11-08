@@ -49,7 +49,11 @@ Nến tuần/tháng chỉ tổng hợp từ các phiên ngày có sẵn; hệ th
 
 
 ## Xác thực cục bộ (SP-019)
-- Lần chạy đầu, mở ứng dụng Android và chọn **Khởi tạo chủ sở hữu**; chỉ một tài khoản chủ sở hữu được tạo trên mỗi cơ sở dữ liệu.
+- Lần khởi động backend đầu tiên, hệ thống tự tạo secret ngẫu nhiên dùng một lần trong file `bootstrap.secret` trên volume dữ liệu (quyền file 0600 trên POSIX); SQLite chỉ lưu SHA-256 của secret. Secret không được ghi log và không có API đọc secret.
+- Với Docker Compose, sau khi `docker compose up -d --build`, người vận hành đọc secret qua kênh quản trị máy chủ tin cậy: `docker compose exec api python -m scripts.show_bootstrap_secret`. Chỉ chạy lệnh này trên máy chủ đáng tin cậy và không gửi secret qua chat/log. Khi chạy backend trực tiếp, dùng `cd backend && python -m scripts.show_bootstrap_secret` sau lần khởi động đầu tiên.
+- Nhập secret này tại bước **Khởi tạo chủ sở hữu** trong ứng dụng Android; request gửi trường `bootstrap_secret`. Cần Chat 3 cập nhật giao diện first-owner để nhập trường này trước khi kiểm thử kết nối Android.
+- Secret được tiêu thụ nguyên tử cùng transaction tạo owner; request sai/thiếu/đã dùng bị từ chối. Sau khi tạo owner, file plaintext được xóa; nếu cleanup thất bại, cờ consumed trong SQLite vẫn chặn replay.
+- Chỉ một tài khoản chủ sở hữu được tạo trên mỗi cơ sở dữ liệu.
 - Mật khẩu được băm PBKDF2-HMAC-SHA256 với salt ngẫu nhiên; API không lưu mật khẩu gốc.
 - Phiên đăng nhập dùng bearer token ngẫu nhiên, chỉ lưu hash SHA-256 ở backend, hết hạn sau 14 ngày; đăng xuất thu hồi token.
 - Android chỉ giữ token trong bộ nhớ ứng dụng; đóng ứng dụng sẽ cần đăng nhập lại.
