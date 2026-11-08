@@ -185,6 +185,7 @@ class _DashboardPageState extends State<DashboardPage> {
       if (healthResponse.statusCode != 200) {
         throw Exception('API trả về HTTP ${healthResponse.statusCode}');
       }
+      if (token != _accessToken || _sessionExpired) return;
 
       final watchlistResponse = await _httpClient
           .get(
@@ -249,6 +250,7 @@ class _DashboardPageState extends State<DashboardPage> {
           createResponse.statusCode != 409) {
         throw ApiRequestException(createResponse.statusCode);
       }
+      if (token != _accessToken || _sessionExpired) return;
 
       final watchlistResponse = await _httpClient
           .post(
