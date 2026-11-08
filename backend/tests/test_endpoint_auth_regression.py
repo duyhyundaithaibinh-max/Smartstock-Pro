@@ -163,6 +163,8 @@ class EndpointAuthRegressionTests(unittest.TestCase):
                 "symbol": "FPT", "name": "FPT Corporation", "exchange": "HOSE"
             }, headers=owner_headers)
             self.assertEqual(created.status_code, 201, created.text)
+            added = client.post("/api/v1/watchlist?symbol=FPT", headers=owner_headers)
+            self.assertEqual(added.status_code, 201, added.text)
 
             self.assertEqual(client.get("/api/v1/watchlist").status_code, 401)
             self.assertEqual(
