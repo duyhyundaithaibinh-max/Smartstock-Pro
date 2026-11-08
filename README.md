@@ -39,7 +39,8 @@ Header: `timestamp,open,high,low,close,volume`. Tạo mã qua `POST /api/v1/symb
 - `GET /api/v1/symbols/FPT/detail` — snapshot chi tiết, chỉ báo, vùng giá, thanh khoản ước tính và nguồn.
 
 Nến tuần/tháng chỉ tổng hợp từ các phiên ngày có sẵn; hệ thống không tự sinh phiên thiếu. Giá trị giao dịch `close × volume` chỉ là ước tính từ OHLCV, không thay thế số liệu thanh khoản chính thức.
-\n## Nguyên tắc
+
+## Nguyên tắc
 - Không tích hợp VPS.
 - Không giả lập dữ liệu giá.
 - Chỉ kết nối nguồn dữ liệu khi có API/quyền sử dụng hợp pháp.
