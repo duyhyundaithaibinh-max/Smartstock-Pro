@@ -11,11 +11,13 @@ class AnalysisPage extends StatefulWidget {
     required this.baseUrl,
     required this.symbol,
     this.apiToken = '',
+    this.onSessionExpired,
   });
 
   final String baseUrl;
   final String symbol;
   final String apiToken;
+  final SessionExpiredCallback? onSessionExpired;
 
   @override
   State<AnalysisPage> createState() => _AnalysisPageState();
@@ -42,15 +44,19 @@ class _AnalysisPageState extends State<AnalysisPage> {
         '${widget.baseUrl}/api/v1/analysis/report',
       ).replace(queryParameters: {'symbol': widget.symbol, 'timeframe': '1d', 'limit': '500'});
       final response = await http.get(uri, headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 15));
+      if (response.statusCode == 401) {
+        widget.onSessionExpired?.call(widget.apiToken);
+        return;
+      }
       if (response.statusCode != 200) {
-        throw Exception('Backend trả về HTTP ${response.statusCode}: ${response.body}');
+        throw ApiRequestException(response.statusCode);
       }
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
       final report = payload['report'] as Map<String, dynamic>;
       if (!mounted) return;
       setState(() => _report = report);
     } catch (error) {
-      if (mounted) setState(() => _error = 'Chưa tạo được báo cáo: $error');
+      if (mounted) setState(() => _error = 'Chưa tạo được báo cáo: ${safeApiErrorMessage(error, fallback: 'Đã xảy ra lỗi khi tạo báo cáo.')}');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
