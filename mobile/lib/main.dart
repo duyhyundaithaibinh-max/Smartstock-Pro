@@ -110,7 +110,7 @@ class _DashboardPageState extends State<DashboardPage> {
         }
         _bootstrapSecretController.clear();
       }
-      final response = await http.post(Uri.parse('$_baseUrl/api/v1/auth/login'), headers: {'Content-Type': 'application/json'}, body: jsonEncode({'username': username, 'password': password})).timeout(const Duration(seconds: 20));
+      final response = await _httpClient.post(Uri.parse('$_baseUrl/api/v1/auth/login'), headers: {'Content-Type': 'application/json'}, body: jsonEncode({'username': username, 'password': password})).timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) throw Exception('Đăng nhập thất bại (HTTP ${response.statusCode}).');
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
       final token = payload['access_token']?.toString();
@@ -128,7 +128,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Future<void> _logout() async {
     final token = _accessToken;
-    if (token != null) { try { await http.post(Uri.parse('$_baseUrl/api/v1/auth/logout'), headers: {'Authorization': 'Bearer $token'}).timeout(const Duration(seconds: 8)); } catch (_) { /* Clear local session even if logout request fails. */ } }
+    if (token != null) { try { await _httpClient.post(Uri.parse('$_baseUrl/api/v1/auth/logout'), headers: {'Authorization': 'Bearer $token'}).timeout(const Duration(seconds: 8)); } catch (_) { /* Clear local session even if logout request fails. */ } }
     if (!mounted) return;
     setState(() { _accessToken = null; _health = null; _watchlist = []; });
   }
