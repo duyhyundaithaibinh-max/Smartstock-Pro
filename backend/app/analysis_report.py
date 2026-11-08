@@ -13,11 +13,19 @@ def build_analysis_report(candles, rule_config=None, rule_version="1.0.0", rule_
     timestamps = [c["timestamp"] for c in candles]
     close = closes[-1]
     rule_config = rule_config or {}
+    price_action_rules = rule_config.get("price_action", {})
     fibonacci_rules = rule_config.get("fibonacci", {})
     elliott_rules = rule_config.get("elliott", {})
     volume_rules = rule_config.get("volume_flow", {})
 
-    trend = price_action.analyze_price_action(highs, lows, closes, volumes, timestamps)
+    trend = price_action.analyze_price_action(
+        highs, lows, closes, volumes, timestamps,
+        lookback=price_action_rules.get("lookback", 120),
+        wing=price_action_rules.get("wing", 2),
+        range_lookback=price_action_rules.get("range_lookback", 20),
+        volume_confirmation_pct=price_action_rules.get("volume_confirmation_pct", 120),
+        breakout_buffer_atr_pct=price_action_rules.get("breakout_buffer_atr_pct", 20),
+    )
     fib = fibonacci.analyze_fibonacci(
         highs, lows, closes, timestamps,
         lookback=fibonacci_rules.get("lookback", 250),
