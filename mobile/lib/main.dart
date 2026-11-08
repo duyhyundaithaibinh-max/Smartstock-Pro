@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import 'api_auth.dart';
 import 'chart_page.dart';
 import 'training_room_page.dart';
 
@@ -37,6 +38,7 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   final TextEditingController _urlController =
       TextEditingController(text: 'http://10.0.2.2:8000');
+  final TextEditingController _tokenController = TextEditingController();
 
   Map<String, dynamic>? _health;
   List<dynamic> _watchlist = [];
@@ -60,7 +62,7 @@ class _DashboardPageState extends State<DashboardPage> {
       }
 
       final watchlistResponse = await http
-          .get(Uri.parse('$_baseUrl/api/v1/watchlist'))
+          .get(Uri.parse('$_baseUrl/api/v1/watchlist'), headers: apiAuthHeaders(_tokenController.text))
           .timeout(const Duration(seconds: 8));
       if (watchlistResponse.statusCode != 200) {
         throw Exception('Không tải được danh sách theo dõi');
@@ -87,7 +89,7 @@ class _DashboardPageState extends State<DashboardPage> {
   void _openChart(String symbol) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => ChartPage(baseUrl: _baseUrl, symbol: symbol),
+        builder: (_) => ChartPage(baseUrl: _baseUrl, symbol: symbol, apiToken: _tokenController.text.trim()),
       ),
     );
   }
@@ -95,7 +97,7 @@ class _DashboardPageState extends State<DashboardPage> {
   void _openTrainingRoom() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => TrainingRoomPage(baseUrl: _baseUrl),
+        builder: (_) => TrainingRoomPage(baseUrl: _baseUrl, apiToken: _tokenController.text.trim()),
       ),
     );
   }
@@ -103,6 +105,7 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   void dispose() {
     _urlController.dispose();
+    _tokenController.dispose();
     super.dispose();
   }
 
@@ -135,6 +138,17 @@ class _DashboardPageState extends State<DashboardPage> {
                         border: OutlineInputBorder(),
                       ),
                       keyboardType: TextInputType.url,
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _tokenController,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: 'API Bearer Token (nếu backend bật bảo vệ)',
+                        helperText: 'Để trống khi chạy local ở chế độ phát triển.',
+                        border: OutlineInputBorder(),
+                      ),
+                      autocorrect: false,
                     ),
                     const SizedBox(height: 10),
                     SizedBox(
