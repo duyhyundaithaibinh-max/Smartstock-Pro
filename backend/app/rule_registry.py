@@ -16,6 +16,12 @@ def _validate_rule_config(config: Any) -> None:
     if not isinstance(config, dict):
         raise ValueError("config must be a JSON object")
     supported = {
+        "price_action": {
+            "lookback": (20, 5000), "wing": (1, 10),
+            "range_lookback": (20, 250),
+            "volume_confirmation_pct": (100, 500),
+            "breakout_buffer_atr_pct": (0, 200),
+        },
         "fibonacci": {"lookback": (10, 5000), "wing": (1, 10)},
         "elliott": {"lookback": (10, 5000), "wing": (1, 10)},
         "volume_flow": {"window": (2, 250)},
