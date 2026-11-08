@@ -372,12 +372,12 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   }
 
   Future<void> _search() async {
-    final requestId = ++_searchRequestId;
     final query = _queryController.text.trim();
     if (query.isEmpty) {
       setState(() => _error = 'Nhập nội dung cần tìm trong kho tri thức.');
       return;
     }
+    final requestId = ++_searchRequestId;
     setState(() {
       _loading = true;
       _error = null;
