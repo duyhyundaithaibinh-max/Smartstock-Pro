@@ -25,6 +25,12 @@ def _validate_rule_config(config: Any) -> None:
         "fibonacci": {"lookback": (10, 5000), "wing": (1, 10)},
         "elliott": {"lookback": (10, 5000), "wing": (1, 10)},
         "volume_flow": {"window": (2, 250)},
+        "indicators": {
+            "ema_fast_period": (2, 100), "ema_slow_period": (3, 300),
+            "rsi_period": (2, 100), "macd_fast_period": (2, 100),
+            "macd_slow_period": (3, 300), "macd_signal_period": (2, 100),
+            "atr_period": (2, 100),
+        },
     }
     for section, values in config.items():
         if section not in supported:
@@ -37,6 +43,11 @@ def _validate_rule_config(config: Any) -> None:
             minimum, maximum = supported[section][key]
             if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
                 raise ValueError(f"{section}.{key} must be an integer from {minimum} to {maximum}")
+    indicator_values = config.get("indicators", {})
+    if indicator_values.get("ema_fast_period", 20) >= indicator_values.get("ema_slow_period", 50):
+        raise ValueError("indicators.ema_fast_period must be smaller than ema_slow_period")
+    if indicator_values.get("macd_fast_period", 12) >= indicator_values.get("macd_slow_period", 26):
+        raise ValueError("indicators.macd_fast_period must be smaller than macd_slow_period")
 
 
 def _canonical_config(config: Any) -> tuple[str, str]:
