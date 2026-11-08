@@ -4,6 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from fastapi import HTTPException
+
 from app import db, knowledge_base, training_room
 from app.routers import market
 
@@ -46,8 +48,9 @@ class TrainingRoomTests(unittest.TestCase):
     def test_rejects_nonexistent_source_citation(self):
         payload = self._payload()
         payload["citation_ids"] = ["kb:999:0"]
-        with self.assertRaises(training_room.TrainingDataError):
+        with self.assertRaises(HTTPException) as error:
             market.create_training_example(payload)
+        self.assertEqual(error.exception.status_code, 422)
 
     def test_approval_and_export_include_only_reviewed_examples(self):
         draft = market.create_training_example(self._payload())
@@ -66,8 +69,9 @@ class TrainingRoomTests(unittest.TestCase):
     def test_deleted_source_prevents_later_approval(self):
         draft = market.create_training_example(self._payload())
         knowledge_base.delete_document(self.document["id"])
-        with self.assertRaises(training_room.TrainingDataError):
+        with self.assertRaises(HTTPException) as error:
             market.approve_training_example(draft["id"])
+        self.assertEqual(error.exception.status_code, 422)
 
     def test_evaluation_reports_duplicates_and_review_counts(self):
         market.create_training_example(self._payload())
