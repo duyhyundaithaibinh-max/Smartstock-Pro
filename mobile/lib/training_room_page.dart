@@ -332,21 +332,21 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     final title = document['title']?.toString() ?? document['filename']?.toString() ?? 'tài liệu';
     try {
       final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Xóa tài liệu?'),
-        content: Text('Xóa "$title" khỏi kho tri thức? Các đoạn trích và chỉ mục liên quan cũng sẽ bị xóa.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Hủy'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Xóa'),
-          ),
-        ],
-      ),
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Xóa tài liệu?'),
+          content: Text('Xóa "$title" khỏi kho tri thức? Các đoạn trích và chỉ mục liên quan cũng sẽ bị xóa.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Hủy'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Xóa'),
+            ),
+          ],
+        ),
       );
       if (confirmed != true || !mounted) return;
       final response = await http.delete(
@@ -357,7 +357,12 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         throw Exception('Backend trả về HTTP ${response.statusCode}');
       }
       if (!mounted) return;
+      // Invalidate reads that may have started before this delete completed.
+      _documentsRequestId++;
+      _searchRequestId++;
       setState(() {
+        _documentsLoading = false;
+        _loading = false;
         _documents.removeWhere((item) => item is Map && item['id'] == id);
         _results.removeWhere((item) => item is Map && item['document_id'] == id);
       });
