@@ -106,6 +106,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
           'category': _uploadCategory,
         }),
       );
+      request.headers.addAll(apiAuthHeaders(widget.apiToken));
       request.files.add(http.MultipartFile.fromBytes(
         'file',
         bytes,
