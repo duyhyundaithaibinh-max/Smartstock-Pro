@@ -452,6 +452,15 @@ def get_knowledge_document(document_id: int):
     return result
 
 
+@router.get("/knowledge/citations/{document_id}/{chunk_index}")
+def resolve_knowledge_citation(document_id: int, chunk_index: int):
+    """Resolve kb:document_id:chunk_index to the exact immutable source locator."""
+    result = knowledge_base.get_citation(document_id, chunk_index)
+    if result is None:
+        raise HTTPException(404, "Knowledge citation not found")
+    return result
+
+
 @router.delete("/knowledge/documents/{document_id}")
 def delete_knowledge_document(document_id: int):
     """Delete a document and cascade-delete all of its chunks."""
