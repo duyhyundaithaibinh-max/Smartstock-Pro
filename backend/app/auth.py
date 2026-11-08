@@ -62,7 +62,7 @@ def _write_bootstrap_secret(path: Path, secret: str) -> None:
         ) as handle:
             temp_name = handle.name
             os.chmod(temp_name, 0o600)
-            handle.write(secret + "\\n")
+            handle.write(secret + "\n")
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp_name, path)
