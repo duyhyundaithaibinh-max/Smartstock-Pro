@@ -1321,48 +1321,92 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       final qualityPage = jsonDecode(responses[1].body);
       if (eventsPage is! Map<String, dynamic> || eventsPage['items'] is! List ||
           eventsPage['total'] is! int || eventsPage['limit'] is! int ||
+          eventsPage['offset'] is! int ||
           qualityPage is! Map<String, dynamic> || qualityPage['items'] is! List) {
         throw const SafeApiException('Dữ liệu lịch sử review không hợp lệ.');
       }
-      final events = eventsPage['items'] as List;
+      final events = List<dynamic>.from(eventsPage['items'] as List);
       final quality = qualityPage['items'] as List;
-      await showDialog<void>(context: context, builder: (dialogContext) => AlertDialog(
-        title: Text('Lịch sử review • ví dụ #$id'),
-        content: SizedBox(width: 620, height: 520, child: ListView(children: [
-          Text('Review events (${eventsPage['total']})',
-            style: Theme.of(context).textTheme.titleMedium),
-          if (events.isEmpty) const Text('Chưa có approve/reject/edit event.'),
-          ...events.whereType<Map<String, dynamic>>().map((event) {
-            final action = switch (event['action']) {
-              'approved' => 'Đã duyệt', 'rejected' => 'Đã từ chối',
-              'edited' => 'Đã chỉnh sửa', _ => 'Sự kiện review',
-            };
-            return ListTile(title: Text('$action • revision ${event['revision_from']} → ${event['revision_to']}'),
+      var total = eventsPage['total'] as int;
+      var offset = eventsPage['offset'] as int;
+      final limit = eventsPage['limit'] as int;
+      var loadingMore = false;
+      var historyError = '';
+      await showDialog<void>(context: context, builder: (dialogContext) =>
+        StatefulBuilder(builder: (context, refresh) => AlertDialog(
+          title: Text('Lịch sử review • ví dụ #$id'),
+          content: SizedBox(width: 620, height: 520, child: ListView(children: [
+            Text('Review events (${total})', style: Theme.of(context).textTheme.titleMedium),
+            if (events.isEmpty) const Text('Chưa có approve/reject/edit event.'),
+            ...events.whereType<Map<String, dynamic>>().map((event) {
+              final action = switch (event['action']) {
+                'approved' => 'Đã duyệt', 'rejected' => 'Đã từ chối',
+                'edited' => 'Đã chỉnh sửa', _ => 'Sự kiện review',
+              };
+              return ListTile(title: Text('$action • revision ${event['revision_from']} → ${event['revision_to']}'),
+                subtitle: Text([
+                  if (event['reason'] is String && (event['reason'] as String).isNotEmpty)
+                    'Lý do: ${event['reason']}',
+                  'Người thực hiện: ${event['reviewer_label'] ?? '—'}'
+                    '${event['reviewer_user_id'] == null ? '' : ' (#${event['reviewer_user_id']})'}',
+                  'Thời gian máy chủ: ${event['created_at'] ?? '—'}',
+                  if (event['changed_fields'] is List && (event['changed_fields'] as List).isNotEmpty)
+                    'Trường đã sửa: ${(event['changed_fields'] as List).join(', ')}',
+                ].join('\n')));
+            }),
+            if (offset + events.length < total)
+              Center(child: OutlinedButton(
+                onPressed: loadingMore ? null : () async {
+                  refresh(() { loadingMore = true; historyError = ''; });
+                  try {
+                    final nextOffset = offset + events.length;
+                    final response = await _httpClient.get(
+                      _uri('/api/v1/training/examples/$id/review-events',
+                        {'limit': '$limit', 'offset': '$nextOffset'}),
+                      headers: headers,
+                    ).timeout(const Duration(seconds: 20));
+                    _checkResponse(response, expectedStatus: 200);
+                    final page = jsonDecode(response.body);
+                    if (page is! Map<String, dynamic> || page['items'] is! List ||
+                        page['total'] is! int || page['limit'] != limit ||
+                        page['offset'] != nextOffset) {
+                      throw const SafeApiException('Trang lịch sử review không hợp lệ.');
+                    }
+                    if (dialogContext.mounted) {
+                      refresh(() {
+                        events.addAll(page['items'] as List);
+                        total = page['total'] as int;
+                        offset = nextOffset;
+                      });
+                    }
+                  } catch (error) {
+                    if (dialogContext.mounted) {
+                      refresh(() => historyError = _safeError(error, 'Không tải thêm được lịch sử.'));
+                    }
+                  } finally {
+                    if (dialogContext.mounted) refresh(() => loadingMore = false);
+                  }
+                },
+                child: Text(loadingMore ? 'Đang tải...' : 'Tải thêm lịch sử'),
+              )),
+            if (historyError.isNotEmpty)
+              Text(historyError, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            const Divider(height: 28),
+            Text('Human Quality Review (${quality.length})',
+              style: Theme.of(context).textTheme.titleMedium),
+            if (quality.isEmpty) const Text('Chưa có đánh giá chất lượng thủ công.'),
+            ...quality.whereType<Map<String, dynamic>>().map((review) => ListTile(
+              title: Text('Điểm ${review['score']}/100 • ${review['rubric_version']}'),
               subtitle: Text([
-                if (event['reason'] is String && (event['reason'] as String).isNotEmpty)
-                  'Lý do: ${event['reason']}',
-                'Người thực hiện: ${event['reviewer_label'] ?? '—'}'
-                  '${event['reviewer_user_id'] == null ? '' : ' (#${event['reviewer_user_id']})'}',
-                'Thời gian máy chủ: ${event['created_at'] ?? '—'}',
-                if (event['changed_fields'] is List && (event['changed_fields'] as List).isNotEmpty)
-                  'Trường đã sửa: ${(event['changed_fields'] as List).join(', ')}',
-              ].join('\n')));
-          }),
-          const Divider(height: 28),
-          Text('Human Quality Review (${quality.length})',
-            style: Theme.of(context).textTheme.titleMedium),
-          if (quality.isEmpty) const Text('Chưa có đánh giá chất lượng thủ công.'),
-          ...quality.whereType<Map<String, dynamic>>().map((review) => ListTile(
-            title: Text('Điểm ${review['score']}/100 • ${review['rubric_version']}'),
-            subtitle: Text([
-              'Revision được đánh giá: ${review['example_revision'] ?? '—'}',
-              'Nhận xét: ${review['rationale'] ?? '—'}',
-              'Reviewer ID: ${review['reviewer_user_id'] ?? '—'}',
-              'Thời gian máy chủ: ${review['reviewed_at'] ?? '—'}',
-            ].join('\n')))),
-        ])),
-        actions: [TextButton(onPressed: () => Navigator.pop(dialogContext),
-          child: const Text('Đóng'))]));
+                'Revision được đánh giá: ${review['example_revision'] ?? '—'}',
+                'Nhận xét: ${review['rationale'] ?? '—'}',
+                'Reviewer ID: ${review['reviewer_user_id'] ?? '—'}',
+                'Thời gian máy chủ: ${review['reviewed_at'] ?? '—'}',
+              ].join('\n')))),
+          ])),
+          actions: [TextButton(onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Đóng'))],
+        )));
     } catch (error) {
       if (mounted && !_sessionExpired) setState(() =>
         _error = 'Không tải được lịch sử: ${_safeError(error, 'Đã xảy ra lỗi khi tải lịch sử.')}');
