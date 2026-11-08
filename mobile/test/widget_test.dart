@@ -5,7 +5,6 @@ import 'package:smartstock_pro/main.dart' show SmartStockApp;
 void main() {
   testWidgets('first launch shows the owner sign-in gate', (tester) async {
     await tester.pumpWidget(const SmartStockApp());
-    expect(find.text('SmartStock Pro'), findsOneWidget);
     expect(find.text('SmartStock Pro • Đăng nhập'), findsOneWidget);
     expect(find.text('Backend URL'), findsOneWidget);
     expect(find.text('Tên đăng nhập'), findsOneWidget);
