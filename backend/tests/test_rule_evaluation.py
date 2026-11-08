@@ -67,6 +67,28 @@ class RuleEvaluationTests(unittest.TestCase):
         self.assertEqual(result["results"]["1.1.0"]["volume_flow_window"], 12)
         self.assertIn("backtest", " ".join(result["limitations"]))
 
+    def test_input_fingerprint_is_stable_and_covers_source_and_ohlcv(self):
+        candles = self.make_candles()
+        versions = [
+            {"version": "1.0.0", "config": {}},
+            {"version": "1.1.0", "config": {"fibonacci": {"wing": 1}}},
+        ]
+        first = compare_rule_versions(candles, versions)["input"]
+        second = compare_rule_versions(candles, versions)["input"]
+        self.assertEqual(first["input_sha256"], second["input_sha256"])
+        self.assertEqual(first["input_fingerprint_algorithm"], "sha256")
+        self.assertEqual(len(first["input_sha256"]), 64)
+
+        changed = [dict(candle) for candle in candles]
+        changed[-1]["source"] = "different-feed"
+        changed_fingerprint = compare_rule_versions(changed, versions)["input"]["input_sha256"]
+        self.assertNotEqual(first["input_sha256"], changed_fingerprint)
+
+        changed = [dict(candle) for candle in candles]
+        changed[-1]["close"] += 0.01
+        changed_fingerprint = compare_rule_versions(changed, versions)["input"]["input_sha256"]
+        self.assertNotEqual(first["input_sha256"], changed_fingerprint)
+
     def test_comparison_is_deterministic(self):
         versions = [
             {"version": "1.0.0", "config": {}},
