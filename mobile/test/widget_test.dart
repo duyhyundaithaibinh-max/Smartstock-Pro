@@ -8,6 +8,8 @@ import 'package:http/testing.dart';
 import 'package:smartstock_pro/api_auth.dart';
 import 'package:smartstock_pro/chart_page.dart';
 import 'package:smartstock_pro/training_room_page.dart';
+import 'package:smartstock_pro/stock_detail_page.dart';
+import 'package:smartstock_pro/analysis_page.dart';
 import 'package:smartstock_pro/main.dart' show DashboardPage;
 
 const _token = 'test-session-token';
@@ -625,6 +627,214 @@ void main() {
       ),
       findsOneWidget,
     );
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+
+  testWidgets('TimeoutException does not clear session or expose exception text',
+      (tester) async {
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('/auth/status')) {
+        return _json(200, {'owner_initialized': true});
+      }
+      if (request.url.path.endsWith('/auth/login')) {
+        return _json(200, {'access_token': _token});
+      }
+      if (request.url.path == '/health') {
+        return _json(200, {'status': 'ok', 'version': 'test'});
+      }
+      if (request.url.path == '/api/v1/watchlist') {
+        throw TimeoutException('TIMEOUT-INTERNAL-SECRET-$_token');
+      }
+      fail('Unexpected request: \${request.method} \${request.url}');
+    });
+    await _pumpDashboard(tester, client);
+    await _login(tester);
+
+    expect(find.text('SmartStock Pro • Đăng nhập'), findsNothing);
+    expect(find.text('Danh sách theo dõi'), findsOneWidget);
+    expect(find.textContaining('Không thể kết nối máy chủ'), findsOneWidget);
+    expect(find.textContaining('TIMEOUT-INTERNAL-SECRET'), findsNothing);
+    expect(find.textContaining(_token), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('HTTP 429 does not expire an authenticated session',
+      (tester) async {
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('/auth/status')) {
+        return _json(200, {'owner_initialized': true});
+      }
+      if (request.url.path.endsWith('/auth/login')) {
+        return _json(200, {'access_token': _token});
+      }
+      if (request.url.path == '/health') {
+        return _json(200, {'status': 'ok', 'version': 'test'});
+      }
+      if (request.url.path == '/api/v1/watchlist') {
+        return http.Response('429-PRIVATE-DETAIL-$_token', 429);
+      }
+      fail('Unexpected request: \${request.method} \${request.url}');
+    });
+    await _pumpDashboard(tester, client);
+    await _login(tester);
+
+    expect(find.text('SmartStock Pro • Đăng nhập'), findsNothing);
+    expect(find.text('Danh sách theo dõi'), findsOneWidget);
+    expect(find.textContaining('Bạn thao tác quá thường xuyên'), findsOneWidget);
+    expect(find.textContaining('429-PRIVATE-DETAIL'), findsNothing);
+    expect(find.textContaining(_token), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('Stock Detail protected 401 invokes session expiry callback',
+      (tester) async {
+    var expiredToken = '';
+    final client = MockClient((request) async => http.Response(
+      '<html>STOCK-DETAIL-PRIVATE-TRACEBACK</html>', 401,
+    ));
+    await tester.pumpWidget(MaterialApp(
+      home: StockDetailPage(
+        baseUrl: 'http://test',
+        symbol: 'FPT',
+        apiToken: _token,
+        onSessionExpired: (token) => expiredToken = token,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(expiredToken, _token);
+    expect(find.textContaining('STOCK-DETAIL-PRIVATE-TRACEBACK'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('Analysis protected 401 invokes session expiry callback',
+      (tester) async {
+    var expiredToken = '';
+    final client = MockClient((request) async => http.Response(
+      '<html>ANALYSIS-PRIVATE-TRACEBACK</html>', 401,
+    ));
+    await tester.pumpWidget(MaterialApp(
+      home: AnalysisPage(
+        baseUrl: 'http://test',
+        symbol: 'FPT',
+        apiToken: _token,
+        onSessionExpired: (token) => expiredToken = token,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(expiredToken, _token);
+    expect(find.textContaining('ANALYSIS-PRIVATE-TRACEBACK'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('real Chart route returns to root Login on protected 401',
+      (tester) async {
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('/auth/status')) {
+        return _json(200, {'owner_initialized': true});
+      }
+      if (request.url.path.endsWith('/auth/login')) {
+        return _json(200, {'access_token': _token});
+      }
+      if (request.url.path == '/health') {
+        return _json(200, {'status': 'ok', 'version': 'test'});
+      }
+      if (request.url.path == '/api/v1/watchlist') {
+        return _json(200, {'items': [
+          {'symbol': 'FPT', 'name': 'FPT', 'exchange': 'HOSE', 'candle_count': 0}
+        ]});
+      }
+      if (request.url.path == '/api/v1/candles/chart') {
+        return http.Response('<html>CHART-ROUTE-PRIVATE-TRACEBACK</html>', 401);
+      }
+      fail('Unexpected request: \${request.method} \${request.url}');
+    });
+    await _pumpDashboard(
+      tester,
+      client,
+      chartBuilder: (baseUrl, symbol, token, onSessionExpired) => ChartPage(
+        baseUrl: baseUrl,
+        symbol: symbol,
+        apiToken: token,
+        onSessionExpired: onSessionExpired,
+        httpClient: client,
+      ),
+    );
+    await _login(tester);
+    await tester.scrollUntilVisible(
+      find.text('FPT'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('FPT'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('SmartStock Pro • Đăng nhập'), findsOneWidget);
+    expect(find.text(
+      'Phiên đăng nhập đã hết hạn hoặc bị thu hồi. Vui lòng đăng nhập lại.',
+    ), findsOneWidget);
+    expect(find.textContaining('CHART-ROUTE-PRIVATE-TRACEBACK'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('real Training Room route returns to root Login once on concurrent 401s',
+      (tester) async {
+    var trainingRequests = 0;
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('/auth/status')) {
+        return _json(200, {'owner_initialized': true});
+      }
+      if (request.url.path.endsWith('/auth/login')) {
+        return _json(200, {'access_token': _token});
+      }
+      if (request.url.path == '/health') {
+        return _json(200, {'status': 'ok', 'version': 'test'});
+      }
+      if (request.url.path == '/api/v1/watchlist') {
+        return _json(200, {'items': []});
+      }
+      if (request.url.path.startsWith('/api/v1/training/') ||
+          request.url.path.startsWith('/api/v1/knowledge/')) {
+        trainingRequests++;
+        return http.Response('<html>TRAINING-ROUTE-PRIVATE-TRACEBACK</html>', 401);
+      }
+      fail('Unexpected request: \${request.method} \${request.url}');
+    });
+    await _pumpDashboard(
+      tester,
+      client,
+      trainingBuilder: (baseUrl, token, onSessionExpired) => TrainingRoomPage(
+        baseUrl: baseUrl,
+        apiToken: token,
+        onSessionExpired: onSessionExpired,
+        httpClient: client,
+      ),
+    );
+    await _login(tester);
+    await tester.scrollUntilVisible(
+      find.text('Hybrid AI Training Room'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('Hybrid AI Training Room'));
+    await tester.pumpAndSettle();
+
+    expect(trainingRequests, greaterThan(1));
+    expect(find.text('SmartStock Pro • Đăng nhập'), findsOneWidget);
+    expect(find.text(
+      'Phiên đăng nhập đã hết hạn hoặc bị thu hồi. Vui lòng đăng nhập lại.',
+    ), findsOneWidget);
+    expect(find.textContaining('TRAINING-ROUTE-PRIVATE-TRACEBACK'), findsNothing);
+    await tester.pumpAndSettle();
+    expect(find.text('SmartStock Pro • Đăng nhập'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     client.close();
   });
