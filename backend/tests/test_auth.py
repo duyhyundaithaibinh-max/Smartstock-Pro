@@ -16,6 +16,8 @@ class LocalAuthenticationTests(unittest.TestCase):
         self.patch_db = patch("app.db.DB_PATH", str(self.db_path))
         self.patch_db.start()
         db.init_db()
+        auth.ensure_bootstrap_secret()
+        self.bootstrap_secret = auth.read_bootstrap_secret()
 
     def tearDown(self):
         self.patch_db.stop()
@@ -74,11 +76,13 @@ class LocalAuthenticationTests(unittest.TestCase):
     def test_first_owner_setup_and_login_through_api(self):
         with TestClient(app) as client:
             setup = client.post("/api/v1/auth/register-first-owner", json={
-                "username": "owner", "password": "a-long-test-password"
+                "username": "owner", "password": "a-long-test-password",
+                "bootstrap_secret": self.bootstrap_secret
             })
             self.assertEqual(setup.status_code, 201)
             duplicate = client.post("/api/v1/auth/register-first-owner", json={
-                "username": "second", "password": "another-long-password"
+                "username": "second", "password": "another-long-password",
+                "bootstrap_secret": self.bootstrap_secret
             })
             self.assertEqual(duplicate.status_code, 409)
             login = client.post("/api/v1/auth/login", json={
