@@ -3,15 +3,19 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import 'api_auth.dart';
+
 class AnalysisPage extends StatefulWidget {
   const AnalysisPage({
     super.key,
     required this.baseUrl,
     required this.symbol,
+    this.apiToken = '',
   });
 
   final String baseUrl;
   final String symbol;
+  final String apiToken;
 
   @override
   State<AnalysisPage> createState() => _AnalysisPageState();
@@ -37,7 +41,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
       final uri = Uri.parse(
         '${widget.baseUrl}/api/v1/analysis/report',
       ).replace(queryParameters: {'symbol': widget.symbol, 'timeframe': '1d', 'limit': '500'});
-      final response = await http.get(uri).timeout(const Duration(seconds: 15));
+      final response = await http.get(uri, headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 15));
       if (response.statusCode != 200) {
         throw Exception('Backend trả về HTTP ${response.statusCode}: ${response.body}');
       }
