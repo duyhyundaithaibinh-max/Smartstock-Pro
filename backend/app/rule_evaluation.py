@@ -21,6 +21,13 @@ def _signature(report: dict[str, Any]) -> dict[str, Any]:
         "data_sources": report.get("data_quality", {}).get("sources", []),
         "trend": trend_data.get("classification", trend_data.get("status", "unknown")),
         "breakout": breakout.get("state", "unknown"),
+        "price_action_parameters": {
+            "pivot_lookback_bars": trend.get("price_zones", {}).get("lookback_bars"),
+            "pivot_wing": trend.get("price_zones", {}).get("pivot_wing"),
+            "range_lookback_bars": breakout.get("range_lookback_bars"),
+            "volume_confirmation_threshold": breakout.get("volume_confirmation_threshold"),
+            "price_buffer_atr": breakout.get("price_buffer_atr"),
+        },
         "fibonacci_status": fibonacci.get("status", "unknown"),
         "fibonacci_direction": fibonacci.get("direction"),
         "elliott_status": elliott.get("status", "unknown"),
