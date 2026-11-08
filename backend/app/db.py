@@ -98,3 +98,15 @@ def init_db():
             FOREIGN KEY(symbol) REFERENCES symbols(symbol) ON DELETE CASCADE
         );
         """)
+        # Safe additive migration for databases created before document categories.
+        document_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(knowledge_documents)").fetchall()
+        }
+        if "category" not in document_columns:
+            conn.execute(
+                "ALTER TABLE knowledge_documents ADD COLUMN category TEXT NOT NULL DEFAULT 'other'"
+            )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_knowledge_documents_category "
+            "ON knowledge_documents(category, created_at DESC)"
+        )
