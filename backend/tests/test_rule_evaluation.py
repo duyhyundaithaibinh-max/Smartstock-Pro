@@ -44,9 +44,21 @@ class RuleEvaluationTests(unittest.TestCase):
         self.assertIn("volume_flow_window", result["differences"])
         self.assertIn("price_action_parameters", result["differences"])
         self.assertIn("indicator_parameters", result["differences"])
+        self.assertIn("indicator_values", result["results"]["1.0.0"])
         self.assertIn("trend_ema_parameters", result["differences"])
         self.assertEqual(result["results"]["1.1.0"]["trend_ema_parameters"], {"fast_period": 10, "slow_period": 30})
         self.assertEqual(result["results"]["1.1.0"]["indicator_parameters"]["ema_fast_period"], 10)
+        self.assertEqual(result["results"]["1.1.0"]["indicator_parameters"]["ema_slow_period"], 30)
+        self.assertEqual(
+            set(result["results"]["1.1.0"]["indicator_parameters"]),
+            {
+                "rsi_period", "ema_fast_period", "ema_slow_period",
+                "macd_fast_period", "macd_slow_period",
+                "macd_signal_period", "atr_period",
+            },
+        )
+        self.assertIsInstance(result["results"]["1.1.0"]["indicator_values"]["ema_fast"], float)
+        self.assertNotIn("ema_fast", result["results"]["1.1.0"]["indicator_parameters"])
         self.assertEqual(
             result["results"]["1.1.0"]["price_action_parameters"]["range_lookback_bars"],
             30,
