@@ -1,4 +1,6 @@
-from fastapi import APIRouter, HTTPException, Request
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, model_validator
 
 from .. import training_room
@@ -24,6 +26,28 @@ class EditPayload(BaseModel):
         if not self.model_fields_set.intersection({"question", "expected_answer", "topic", "citation_ids"}):
             raise ValueError("Provide at least one field to update.")
         return self
+
+
+class ReviewEventItem(BaseModel):
+    id: int
+    example_id: int
+    action: str
+    reason: str | None
+    revision_from: int
+    revision_to: int
+    changed_fields: list[str]
+    reviewer_user_id: int
+    reviewer_label: str
+    created_at: str
+
+
+class ReviewEventPage(BaseModel):
+    example_id: int
+    items: list[ReviewEventItem]
+    count: int
+    total: int
+    limit: int
+    offset: int
 
 
 class QualityReviewPayload(BaseModel):
@@ -95,13 +119,13 @@ def get_training_quality_reviews(example_id: int, request: Request):
 
 
 
-@router.get("/examples/{example_id}/review-events")
+@router.get("/examples/{example_id}/review-events", response_model=ReviewEventPage)
 def get_training_review_events(
     example_id: int,
     request: Request,
-    limit: int = 50,
-    offset: int = 0,
-):
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> ReviewEventPage:
     """Return chronological append-only approve/reject/edit events for one example."""
     _reviewer_id(request)
     try:
