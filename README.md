@@ -69,6 +69,7 @@ Nến tuần/tháng chỉ tổng hợp từ các phiên ngày có sẵn; hệ th
 - Search indexed chunks: `GET /api/v1/knowledge/search?q=Elliott%20Wave&top_k=5`.
 - Each hit returns a stable citation ID (`kb:document_id:chunk_index`), source filename/title, source label, SHA-256 and character offsets.
 - The retrieval context is bounded to 12,000 characters and explicitly labels retrieved text as untrusted evidence; instructions embedded in source documents must not be followed.
+- Resolve a citation to the exact stored passage: `GET /api/v1/knowledge/citations/{document_id}/{chunk_index}`.
 - Current retrieval is deterministic BM25-style lexical matching, not semantic/vector search. It does not call an LLM or external service. Embeddings, model-backed generation and user/role-level document permissions remain future work.
 
 ## Versioned analysis rules (SP-016 — foundation)
