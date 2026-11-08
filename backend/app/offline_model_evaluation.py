@@ -63,14 +63,18 @@ def evaluate_predictions(predictions: Any) -> dict[str, Any]:
         }
 
     with connection() as conn:
-        approved = {
-            row["id"]: dict(row)
-            for row in conn.execute(
-                "SELECT * FROM training_examples WHERE status='approved'"
-            ).fetchall()
-        }
+        approved = {}
+        for row in conn.execute(
+            "SELECT * FROM training_examples WHERE status='approved'"
+        ).fetchall():
+            reference = dict(row)
+            gold_citations = json.loads(reference["citation_ids"])
+            # An example approved in the past may become unusable after its
+            # source document is deleted. Never score against stale references.
+            if all(_citation_exists(conn, citation) for citation in gold_citations):
+                approved[reference["id"]] = reference
         if not approved:
-            raise ValueError("No approved reference examples are available.")
+            raise ValueError("No approved reference examples with valid source citations are available.")
         unknown = sorted(set(normalized) - set(approved))
         if unknown:
             raise ValueError(f"Predictions reference unknown or unapproved examples: {unknown}")
