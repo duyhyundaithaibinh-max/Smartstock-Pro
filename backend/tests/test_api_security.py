@@ -25,9 +25,8 @@ class ApiSecurityTests(unittest.TestCase):
     def test_empty_expected_token_never_authorizes(self):
         self.assertFalse(api_token_is_valid("Bearer anything", ""))
 
-    def test_production_requires_api_token(self):
-        with self.assertRaises(RuntimeError):
-            validate_security_configuration("production", "")
+    def test_production_allows_owner_session_without_legacy_api_token(self):
+        validate_security_configuration("production", "")
 
     def test_development_can_run_without_api_token(self):
         validate_security_configuration("development", "")
