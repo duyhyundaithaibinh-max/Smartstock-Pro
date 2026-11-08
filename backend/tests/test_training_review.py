@@ -1,12 +1,15 @@
 import os
+import sqlite3
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from app import auth, db
+from app import auth, db, training_room
 from app.main import app
 
 
@@ -202,6 +205,88 @@ class TrainingReviewApiTests(unittest.TestCase):
                 self.assertEqual(client.get(url, headers=headers).status_code, 403)
                 self.assertEqual(client.post(url, json={"score": 50, "rubric_version": "qa-quality-v1",
                     "rationale": "Review from legacy token must fail."}, headers=headers).status_code, 403)
+
+
+    def test_reject_update_and_audit_insert_roll_back_together(self):
+        with TestClient(app) as client:
+            example = self._create(client)
+            with db.connection() as conn:
+                conn.execute("""
+                    CREATE TRIGGER fail_review_event_insert
+                    BEFORE INSERT ON training_example_review_events
+                    BEGIN SELECT RAISE(ABORT, 'injected audit failure'); END
+                """)
+            with self.assertRaises(sqlite3.IntegrityError):
+                training_room.reject_example(example["id"], "A valid rejection reason", 1)
+            with db.connection() as conn:
+                row = conn.execute("SELECT status FROM training_examples WHERE id=?",
+                                   (example["id"],)).fetchone()
+                count = conn.execute("SELECT COUNT(*) FROM training_example_review_events").fetchone()[0]
+            self.assertEqual(row["status"], "draft")
+            self.assertEqual(count, 0)
+
+    def test_concurrent_edits_with_same_revision_allow_exactly_one_writer(self):
+        with TestClient(app) as client:
+            example = self._create(client)
+            barrier = Barrier(2)
+
+            def edit(topic):
+                barrier.wait()
+                return training_room.edit_draft_example(
+                    example["id"], {"expected_revision": 1, "topic": topic}, 1
+                )
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [pool.submit(edit, "topic-a"), pool.submit(edit, "topic-b")]
+                outcomes = []
+                for future in futures:
+                    try:
+                        outcomes.append(future.result(timeout=10))
+                    except training_room.TrainingConflictError:
+                        outcomes.append("conflict")
+            self.assertEqual(sum(item != "conflict" for item in outcomes), 1)
+            self.assertEqual(outcomes.count("conflict"), 1)
+            with db.connection() as conn:
+                row = conn.execute("SELECT revision FROM training_examples WHERE id=?",
+                                   (example["id"],)).fetchone()
+            self.assertEqual(row["revision"], 2)
+
+    def test_legacy_schema_migration_preserves_ids_content_and_foreign_keys(self):
+        path = Path(self.temp_dir.name) / "legacy.db"
+        conn = sqlite3.connect(path)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("CREATE TABLE auth_users(id INTEGER PRIMARY KEY)")
+        conn.execute("""
+            CREATE TABLE training_examples (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                question TEXT NOT NULL,
+                expected_answer TEXT NOT NULL,
+                topic TEXT NOT NULL DEFAULT 'general',
+                citation_ids TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('draft','approved')) DEFAULT 'draft',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX idx_training_examples_status_created ON training_examples(status, created_at)")
+        conn.execute("""
+            INSERT INTO training_examples
+                (id,question,expected_answer,topic,citation_ids,status,created_at,updated_at)
+            VALUES(7,'Câu hỏi cũ','Câu trả lời cũ đủ dài để giữ nguyên','elliott','[""kb:1:0""]',
+                   'approved','2026-01-01T00:00:00','2026-01-02T00:00:00')
+        """)
+        conn.commit()
+        db._migrate_training_review(conn)
+        row = conn.execute("SELECT * FROM training_examples WHERE id=7").fetchone()
+        self.assertEqual(row["question"], "Câu hỏi cũ")
+        self.assertEqual(row["expected_answer"], "Câu trả lời cũ đủ dài để giữ nguyên")
+        self.assertEqual(row["status"], "approved")
+        self.assertEqual(row["revision"], 1)
+        self.assertEqual(row["created_at"], "2026-01-01T00:00:00")
+        conn.execute("UPDATE training_examples SET status='rejected' WHERE id=7")
+        self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+        conn.close()
 
 
 if __name__ == "__main__":
