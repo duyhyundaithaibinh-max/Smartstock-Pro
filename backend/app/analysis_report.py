@@ -58,7 +58,7 @@ def build_analysis_report(candles, rule_config=None, rule_version="1.0.0", rule_
     supports = trend.get("price_zones", {}).get("supports", [])
     resistances = trend.get("price_zones", {}).get("resistances", [])
     support = supports[0]["price"] if supports else None
-    resistance = resistances[0]["price"] if resistances else trend.get("breakout", {}).get("prior_20_bar_high")
+    resistance = resistances[0]["price"] if resistances else trend.get("breakout", {}).get("prior_range_high")
     breakout_state = trend.get("breakout", {}).get("state", "unknown")
     trend_state = trend.get("trend", {}).get("classification", "unknown")
     flow_state = flow.get("classification", "unknown")
