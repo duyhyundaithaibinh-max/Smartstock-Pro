@@ -94,6 +94,53 @@ class _DashboardPageState extends State<DashboardPage> {
   Future<void> _createAndAddSymbol() async {
     final symbol = _symbolController.text.trim().toUpperCase();
     final name = _nameController.text.trim();
+    if (!RegExp(r'^[A-Z0-9.]{3,12}$').hasMatch(symbol) || name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nhập mã 3–12 ký tự và tên doanh nghiệp.')),
+      );
+      return;
+    }
+    setState(() => _addingSymbol = true);
+    try {
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+        ...apiAuthHeaders(_tokenController.text),
+      };
+      final createResponse = await http.post(
+        Uri.parse('$_baseUrl/api/v1/symbols'),
+        headers: headers,
+        body: jsonEncode({'symbol': symbol, 'name': name, 'exchange': _exchange}),
+      ).timeout(const Duration(seconds: 12));
+      if (createResponse.statusCode != 201 && createResponse.statusCode != 409) {
+        throw Exception('Không tạo được mã: HTTP ' + createResponse.statusCode.toString());
+      }
+      final watchlistResponse = await http.post(
+        Uri.parse('$_baseUrl/api/v1/watchlist').replace(
+          queryParameters: {'symbol': symbol},
+        ),
+        headers: apiAuthHeaders(_tokenController.text),
+      ).timeout(const Duration(seconds: 12));
+      if (watchlistResponse.statusCode != 201 && watchlistResponse.statusCode != 409) {
+        throw Exception('Không thêm được vào watchlist: HTTP ' + watchlistResponse.statusCode.toString());
+      }
+      _symbolController.clear();
+      _nameController.clear();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Đã thêm $symbol vào danh sách theo dõi. Cần nhập OHLCV hợp pháp để phân tích.')),
+      );
+      await _connect();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Không thêm được mã: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _addingSymbol = false);
+    }
+  }
+
   void _openChart(String symbol) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -114,6 +161,8 @@ class _DashboardPageState extends State<DashboardPage> {
   void dispose() {
     _urlController.dispose();
     _tokenController.dispose();
+    _symbolController.dispose();
+    _nameController.dispose();
     super.dispose();
   }
 
@@ -204,6 +253,66 @@ class _DashboardPageState extends State<DashboardPage> {
             const SizedBox(height: 16),
             Text('Danh sách theo dõi',
                 style: theme.textTheme.titleLarge),
+            const SizedBox(height: 8),
+
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Thêm mã vào danh sách', style: theme.textTheme.titleMedium),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _symbolController,
+                      textCapitalization: TextCapitalization.characters,
+                      autocorrect: false,
+                      decoration: const InputDecoration(
+                        labelText: 'Mã cổ phiếu (ví dụ: FPT)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Tên doanh nghiệp',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      initialValue: _exchange,
+                      decoration: const InputDecoration(
+                        labelText: 'Sàn giao dịch',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'HOSE', child: Text('HOSE')),
+                        DropdownMenuItem(value: 'HNX', child: Text('HNX')),
+                        DropdownMenuItem(value: 'UPCOM', child: Text('UPCoM')),
+                      ],
+                      onChanged: _addingSymbol ? null : (value) {
+                        if (value != null) setState(() => _exchange = value);
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _addingSymbol ? null : _createAndAddSymbol,
+                        icon: const Icon(Icons.add),
+                        label: Text(_addingSymbol ? 'Đang thêm mã...' : 'Tạo mã và thêm vào watchlist'),
+                      ),
+                    ),
+                    const Text(
+                      'Thao tác này chỉ tạo thông tin mã, không tạo giá hoặc khối lượng. Cần nhập dữ liệu OHLCV từ nguồn hợp pháp để phân tích.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ),
             const SizedBox(height: 8),
             if (_watchlist.isEmpty)
               const Card(
