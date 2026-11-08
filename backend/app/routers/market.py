@@ -409,13 +409,16 @@ async def upload_knowledge_document(
     file: UploadFile = File(...),
     source: Annotated[str, Query(min_length=1, max_length=100)] = "user_upload",
     title: Annotated[str | None, Query(max_length=200)] = None,
+    category: Annotated[str, Query(max_length=40)] = "other",
 ):
     """Extract and index a local TXT/Markdown/CSV/PDF document into SQLite."""
     raw = await file.read(10_485_761)
     if len(raw) > knowledge_base.MAX_UPLOAD_BYTES:
         raise HTTPException(413, "Document exceeds the 10 MB upload limit")
     try:
-        result = knowledge_base.ingest_document(file.filename or "", raw, source=source, title=title)
+        result = knowledge_base.ingest_document(
+            file.filename or "", raw, source=source, title=title, category=category
+        )
     except knowledge_base.KnowledgeBaseError as exc:
         raise HTTPException(400, str(exc)) from exc
     if result["status"] == "duplicate":
@@ -431,9 +434,13 @@ async def upload_knowledge_document(
 def list_knowledge_documents(
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
+    category: Annotated[str | None, Query(max_length=40)] = None,
 ):
     """List indexed knowledge documents without returning their full text."""
-    return knowledge_base.list_documents(limit=limit, offset=offset)
+    try:
+        return knowledge_base.list_documents(limit=limit, offset=offset, category=category)
+    except knowledge_base.KnowledgeBaseError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get("/knowledge/documents/{document_id}")
@@ -457,10 +464,11 @@ def delete_knowledge_document(document_id: int):
 def search_knowledge_documents(
     q: Annotated[str, Query(min_length=1, max_length=500)],
     top_k: Annotated[int, Query(ge=1, le=20)] = 5,
+    category: Annotated[str | None, Query(max_length=40)] = None,
 ):
     """Retrieve local knowledge chunks with stable source citations."""
     try:
-        result = knowledge_retrieval.search_knowledge(q, top_k=top_k)
+        result = knowledge_retrieval.search_knowledge(q, top_k=top_k, category=category)
         result["retrieval_context"] = knowledge_retrieval.build_retrieval_context(result)
         return result
     except ValueError as exc:
