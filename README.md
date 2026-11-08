@@ -25,6 +25,14 @@ Mở `http://127.0.0.1:8000/docs`.
 ## Chạy bằng Docker
 Tại thư mục gốc: `docker compose up --build`. API ở `http://localhost:8000`.
 
+## API security boundary
+
+- Development mode keeps API authentication disabled for a local MVP. Do not expose this mode to an untrusted network.
+- Enable shared Bearer-token protection by setting `SMARTSTOCK_API_TOKEN` in the environment. Android dashboard accepts the same token and sends it with API requests; the token remains in app memory and is not persisted.
+- Production startup fails closed if `SMARTSTOCK_ENV=production` and `SMARTSTOCK_API_TOKEN` is missing.
+- Example: copy `.env.example` to `.env`, generate a long random token, set `SMARTSTOCK_ENV=production` and `SMARTSTOCK_API_TOKEN`, then run Docker Compose.
+- This is a single shared API token, **not** per-user authentication, role-based access control, or document-level ownership. Do not use it as a substitute for a proper account/permission system in a multi-user deployment. Use HTTPS/TLS at the trusted reverse proxy when accessing over a network; do not commit real secrets.
+
 ## CSV OHLCV
 Header: `timestamp,open,high,low,close,volume`. Tạo mã qua `POST /api/v1/symbols`, sau đó gọi `POST /api/v1/candles/import-csv?symbol=FPT&source=licensed-provider` và đính kèm file CSV.
 
