@@ -10,10 +10,14 @@ import 'api_auth.dart';
 /// Local knowledge retrieval and document management.
 /// Search results are source passages, not AI-generated answers.
 class TrainingRoomPage extends StatefulWidget {
-  const TrainingRoomPage({super.key, required this.baseUrl, this.apiToken = ''});
+  const TrainingRoomPage({
+    super.key, required this.baseUrl, this.apiToken = '',
+    this.onSessionExpired,
+  });
 
   final String baseUrl;
   final String apiToken;
+  final SessionExpiredCallback? onSessionExpired;
 
   @override
   State<TrainingRoomPage> createState() => _TrainingRoomPageState();
@@ -64,6 +68,19 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     return Uri.parse('${widget.baseUrl}$path').replace(queryParameters: query);
   }
 
+  void _checkResponse(http.Response response, {required int expectedStatus}) {
+    if (response.statusCode == 401) {
+      widget.onSessionExpired?.call(widget.apiToken);
+      throw const ApiRequestException(401);
+    }
+    if (response.statusCode != expectedStatus) {
+      throw ApiRequestException(response.statusCode);
+    }
+  }
+
+  String _safeError(Object error, String fallback) =>
+      safeApiErrorMessage(error, fallback: fallback);
+
   Future<void> _loadTrainingData() async {
     final requestVersion = ++_trainingDataRequestVersion;
     if (mounted) {
@@ -82,8 +99,8 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
           headers: apiAuthHeaders(widget.apiToken),
         ).timeout(const Duration(seconds: 20)),
       ]);
-      if (responses.any((response) => response.statusCode != 200)) {
-        throw Exception('Backend chưa hỗ trợ đầy đủ API Training Room.');
+      for (final response in responses) {
+        _checkResponse(response, expectedStatus: 200);
       }
       final examples = jsonDecode(responses[0].body) as Map<String, dynamic>;
       final evaluation = jsonDecode(responses[1].body) as Map<String, dynamic>;
@@ -94,7 +111,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       });
     } catch (error) {
       if (mounted && requestVersion == _trainingDataRequestVersion) {
-        setState(() => _error = 'Không tải được bộ dữ liệu huấn luyện: $error');
+        setState(() => _error = 'Không tải được bộ dữ liệu huấn luyện: ${_safeError(error, 'Đã xảy ra lỗi khi tải dữ liệu huấn luyện.')}');
       }
     } finally {
       if (mounted && requestVersion == _trainingDataRequestVersion) {
@@ -129,7 +146,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
           'topic': topic.isEmpty ? 'general' : topic, 'citation_ids': citations,
         }),
       ).timeout(const Duration(seconds: 20));
-      if (response.statusCode != 201) throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      _checkResponse(response, expectedStatus: 201);
       if (!mounted) return;
       _trainingQuestionController.clear();
       _trainingAnswerController.clear();
@@ -138,7 +155,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã lưu ví dụ ở trạng thái chờ duyệt.')));
     } catch (error) {
-      if (mounted) setState(() => _error = 'Không lưu được ví dụ: $error');
+      if (mounted) setState(() => _error = 'Không lưu được ví dụ: ${_safeError(error, 'Đã xảy ra lỗi khi lưu ví dụ.')}');
     } finally {
       if (mounted) setState(() => _savingExample = false);
     }
@@ -155,9 +172,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         _uri('/api/v1/training/examples/$id/approve'),
         headers: apiAuthHeaders(widget.apiToken),
       ).timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200) {
-        throw Exception('HTTP ${response.statusCode}: ${response.body}');
-      }
+      _checkResponse(response, expectedStatus: 200);
       await _loadTrainingData();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -165,7 +180,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       );
     } catch (error) {
       if (mounted) {
-        setState(() => _error = 'Không duyệt được ví dụ: $error');
+        setState(() => _error = 'Không duyệt được ví dụ: ${_safeError(error, 'Đã xảy ra lỗi khi duyệt ví dụ.')}');
       }
     } finally {
       if (mounted) setState(() => _trainingActionIds.remove(id));
@@ -201,9 +216,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         _uri('/api/v1/training/examples/$id'),
         headers: apiAuthHeaders(widget.apiToken),
       ).timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200) {
-        throw Exception('HTTP ${response.statusCode}: ${response.body}');
-      }
+      _checkResponse(response, expectedStatus: 200);
       await _loadTrainingData();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -211,7 +224,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       );
     } catch (error) {
       if (mounted) {
-        setState(() => _error = 'Không xóa được ví dụ: $error');
+        setState(() => _error = 'Không xóa được ví dụ: ${_safeError(error, 'Đã xảy ra lỗi khi xóa ví dụ.')}');
       }
     } finally {
       if (mounted) setState(() => _trainingActionIds.remove(id));
@@ -227,13 +240,13 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     try {
       final response = await http.get(_uri('/api/v1/training/export'),
           headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200) throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      _checkResponse(response, expectedStatus: 200);
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
       await Clipboard.setData(ClipboardData(text: payload['content']?.toString() ?? ''));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã sao chép ${payload['count'] ?? 0} ví dụ đã duyệt dạng JSONL.')));
     } catch (error) {
-      if (mounted) setState(() => _error = 'Không xuất được dữ liệu: $error');
+      if (mounted) setState(() => _error = 'Không xuất được dữ liệu: ${_safeError(error, 'Đã xảy ra lỗi khi xuất dữ liệu.')}');
     } finally {
       if (mounted) setState(() => _exportingTraining = false);
     }
@@ -251,15 +264,13 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         'offset': '0',
         if (category != 'all') 'category': category,
       }), headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200) {
-        throw Exception('Backend trả về HTTP ${response.statusCode}');
-      }
+      _checkResponse(response, expectedStatus: 200);
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
       if (!mounted || requestVersion != _documentsRequestVersion) return;
       setState(() => _documents = payload['items'] as List<dynamic>? ?? []);
     } catch (error) {
       if (mounted && requestVersion == _documentsRequestVersion) {
-        setState(() => _error = 'Không tải được danh sách tài liệu: $error');
+        setState(() => _error = 'Không tải được danh sách tài liệu: ${_safeError(error, 'Đã xảy ra lỗi khi tải danh sách tài liệu.')}');
       }
     } finally {
       if (mounted && requestVersion == _documentsRequestVersion) {
@@ -310,18 +321,9 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       final streamed = await request.send().timeout(const Duration(seconds: 60));
       final response = await http.Response.fromStream(streamed);
       if (response.statusCode == 409) {
-        throw Exception('Tài liệu này đã được nhập trước đó (trùng nội dung).');
+        throw const SafeApiException('Tài liệu này đã được nhập trước đó (trùng nội dung).');
       }
-      if (response.statusCode != 201) {
-        var detail = response.body;
-        try {
-          final payload = jsonDecode(response.body);
-          detail = payload is Map ? (payload['detail'] ?? payload).toString() : detail;
-        } catch (_) {
-          // Keep the raw backend response when it is not JSON.
-        }
-        throw Exception('HTTP ${response.statusCode}: $detail');
-      }
+      _checkResponse(response, expectedStatus: 201);
       if (!mounted) return;
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -329,7 +331,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       );
       await _loadDocuments();
     } catch (error) {
-      if (mounted) setState(() => _error = 'Không nhập được tài liệu: $error');
+      if (mounted) setState(() => _error = 'Không nhập được tài liệu: ${_safeError(error, 'Đã xảy ra lỗi khi nhập tài liệu.')}');
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
@@ -366,9 +368,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         _uri('/api/v1/knowledge/documents/$id'),
         headers: apiAuthHeaders(widget.apiToken),
       ).timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200) {
-        throw Exception('Backend trả về HTTP ${response.statusCode}');
-      }
+      _checkResponse(response, expectedStatus: 200);
       if (!mounted) return;
       // Invalidate reads that may have started before this deletion completed.
       _documentsRequestVersion++;
@@ -384,7 +384,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         const SnackBar(content: Text('Đã xóa tài liệu khỏi kho tri thức.')),
       );
     } catch (error) {
-      if (mounted) setState(() => _error = 'Không xóa được tài liệu: $error');
+      if (mounted) setState(() => _error = 'Không xóa được tài liệu: ${_safeError(error, 'Đã xảy ra lỗi khi xóa tài liệu.')}');
     } finally {
       if (mounted) setState(() => _documentActionIds.remove(id));
     }
@@ -414,9 +414,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         }),
         headers: apiAuthHeaders(widget.apiToken),
       ).timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200) {
-        throw Exception('Backend trả về HTTP ${response.statusCode}: ${response.body}');
-      }
+      _checkResponse(response, expectedStatus: 200);
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
       if (!mounted || requestVersion != _searchRequestVersion) return;
       setState(() {
@@ -425,7 +423,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       });
     } catch (error) {
       if (mounted && requestVersion == _searchRequestVersion) {
-        setState(() => _error = 'Không tìm kiếm được: $error');
+        setState(() => _error = 'Không tìm kiếm được: ${_safeError(error, 'Đã xảy ra lỗi khi tìm kiếm.')}');
       }
     } finally {
       if (mounted && requestVersion == _searchRequestVersion) {
