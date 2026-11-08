@@ -13,17 +13,22 @@ class TrainingRoomPage extends StatefulWidget {
   const TrainingRoomPage({
     super.key, required this.baseUrl, this.apiToken = '',
     this.onSessionExpired,
+    this.httpClient,
   });
 
   final String baseUrl;
   final String apiToken;
   final SessionExpiredCallback? onSessionExpired;
+  final http.Client? httpClient;
 
   @override
   State<TrainingRoomPage> createState() => _TrainingRoomPageState();
 }
 
 class _TrainingRoomPageState extends State<TrainingRoomPage> {
+  late final http.Client _httpClient = widget.httpClient ?? http.Client();
+  bool get _ownsHttpClient => widget.httpClient == null;
+
   final TextEditingController _queryController = TextEditingController();
   final TextEditingController _trainingQuestionController = TextEditingController();
   final TextEditingController _trainingAnswerController = TextEditingController();
@@ -90,11 +95,11 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     }
     try {
       final responses = await Future.wait([
-        http.get(
+        _httpClient.get(
           _uri('/api/v1/training/examples', {'limit': '100', 'offset': '0'}),
           headers: apiAuthHeaders(widget.apiToken),
         ).timeout(const Duration(seconds: 20)),
-        http.get(
+        _httpClient.get(
           _uri('/api/v1/training/evaluation'),
           headers: apiAuthHeaders(widget.apiToken),
         ).timeout(const Duration(seconds: 20)),
@@ -138,7 +143,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     }
     setState(() { _savingExample = true; _error = null; });
     try {
-      final response = await http.post(
+      final response = await _httpClient.post(
         _uri('/api/v1/training/examples'),
         headers: {'Content-Type': 'application/json', ...apiAuthHeaders(widget.apiToken)},
         body: jsonEncode({
@@ -168,7 +173,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       _error = null;
     });
     try {
-      final response = await http.post(
+      final response = await _httpClient.post(
         _uri('/api/v1/training/examples/$id/approve'),
         headers: apiAuthHeaders(widget.apiToken),
       ).timeout(const Duration(seconds: 20));
@@ -212,7 +217,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       _error = null;
     });
     try {
-      final response = await http.delete(
+      final response = await _httpClient.delete(
         _uri('/api/v1/training/examples/$id'),
         headers: apiAuthHeaders(widget.apiToken),
       ).timeout(const Duration(seconds: 20));
@@ -238,7 +243,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       _error = null;
     });
     try {
-      final response = await http.get(_uri('/api/v1/training/export'),
+      final response = await _httpClient.get(_uri('/api/v1/training/export'),
           headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 20));
       _checkResponse(response, expectedStatus: 200);
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
@@ -259,7 +264,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       _error = null;
     });
     try {
-      final response = await http.get(_uri('/api/v1/knowledge/documents', {
+      final response = await _httpClient.get(_uri('/api/v1/knowledge/documents', {
         'limit': '100',
         'offset': '0',
         if (category != 'all') 'category': category,
@@ -318,7 +323,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         bytes,
         filename: file.name,
       ));
-      final streamed = await request.send().timeout(const Duration(seconds: 60));
+      final streamed = await _httpClient.send(request).timeout(const Duration(seconds: 60));
       final response = await http.Response.fromStream(streamed);
       if (response.statusCode == 409) {
         throw const SafeApiException('Tài liệu này đã được nhập trước đó (trùng nội dung).');
@@ -364,7 +369,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         ),
       );
       if (confirmed != true || !mounted) return;
-      final response = await http.delete(
+      final response = await _httpClient.delete(
         _uri('/api/v1/knowledge/documents/$id'),
         headers: apiAuthHeaders(widget.apiToken),
       ).timeout(const Duration(seconds: 20));
@@ -406,7 +411,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       _searched = true;
     });
     try {
-      final response = await http.get(
+      final response = await _httpClient.get(
         _uri('/api/v1/knowledge/search', {
           'q': query,
           'top_k': '8',
@@ -441,6 +446,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
 
   @override
   void dispose() {
+    if (_ownsHttpClient) _httpClient.close();
     _queryController.dispose();
     _trainingQuestionController.dispose();
     _trainingAnswerController.dispose();
