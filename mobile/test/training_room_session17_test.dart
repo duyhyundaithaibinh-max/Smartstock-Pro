@@ -69,7 +69,7 @@ Future<void> _showCitation(WidgetTester tester, String citation) async {
   await tester.scrollUntilVisible(
     target,
     250,
-    scrollable: find.byType(ListView).first,
+    scrollable: find.byType(Scrollable).first,
   );
   await tester.pumpAndSettle();
 }
@@ -79,7 +79,7 @@ Future<void> _showError(WidgetTester tester, String message) async {
   await tester.scrollUntilVisible(
     target,
     250,
-    scrollable: find.byType(ListView).first,
+    scrollable: find.byType(Scrollable).first,
   );
   await tester.pumpAndSettle();
 }
