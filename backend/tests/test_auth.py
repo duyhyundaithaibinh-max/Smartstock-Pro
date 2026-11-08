@@ -225,8 +225,8 @@ class LocalAuthenticationTests(unittest.TestCase):
 
     def test_private_api_requires_authentication_and_owner_session_protects_write(self):
         with TestClient(app) as client:
-            response = client.get("/api/v1/training/evaluation/predictions")
-            self.assertEqual(response.status_code, 405)
+            response = client.post("/api/v1/training/evaluation/predictions", json={"predictions": []})
+            self.assertEqual(response.status_code, 401)
             unauthorized = client.post("/api/v1/symbols", json={
                 "symbol": "FPT", "name": "FPT", "exchange": "HOSE"
             })
