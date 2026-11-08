@@ -10,16 +10,18 @@ import 'api_auth.dart';
 /// Local knowledge retrieval and document management.
 /// Search results are source passages, not AI-generated answers.
 class TrainingRoomPage extends StatefulWidget {
-  const TrainingRoomPage({super.key, required this.baseUrl, this.apiToken = ''});
+  const TrainingRoomPage({super.key, required this.baseUrl, required this.accessToken});
 
   final String baseUrl;
-  final String apiToken;
+  final String accessToken;
 
   @override
   State<TrainingRoomPage> createState() => _TrainingRoomPageState();
 }
 
 class _TrainingRoomPageState extends State<TrainingRoomPage> {
+  Map<String, String> get _authHeaders => apiAuthHeaders(widget.accessToken);
+
   final TextEditingController _queryController = TextEditingController();
   final TextEditingController _trainingQuestionController = TextEditingController();
   final TextEditingController _trainingAnswerController = TextEditingController();
@@ -75,11 +77,11 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       final responses = await Future.wait([
         http.get(
           _uri('/api/v1/training/examples', {'limit': '100', 'offset': '0'}),
-          headers: apiAuthHeaders(widget.apiToken),
+          headers: _authHeaders,
         ).timeout(const Duration(seconds: 20)),
         http.get(
           _uri('/api/v1/training/evaluation'),
-          headers: apiAuthHeaders(widget.apiToken),
+          headers: _authHeaders,
         ).timeout(const Duration(seconds: 20)),
       ]);
       if (responses.any((response) => response.statusCode != 200)) {
@@ -123,7 +125,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     try {
       final response = await http.post(
         _uri('/api/v1/training/examples'),
-        headers: {'Content-Type': 'application/json', ...apiAuthHeaders(widget.apiToken)},
+        headers: {'Content-Type': 'application/json', ..._authHeaders},
         body: jsonEncode({
           'question': question, 'expected_answer': answer,
           'topic': topic.isEmpty ? 'general' : topic, 'citation_ids': citations,
@@ -153,7 +155,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     try {
       final response = await http.post(
         _uri('/api/v1/training/examples/$id/approve'),
-        headers: apiAuthHeaders(widget.apiToken),
+        headers: _authHeaders,
       ).timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
         throw Exception('HTTP ${response.statusCode}: ${response.body}');
@@ -199,7 +201,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     try {
       final response = await http.delete(
         _uri('/api/v1/training/examples/$id'),
-        headers: apiAuthHeaders(widget.apiToken),
+        headers: _authHeaders,
       ).timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
         throw Exception('HTTP ${response.statusCode}: ${response.body}');
@@ -226,7 +228,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     });
     try {
       final response = await http.get(_uri('/api/v1/training/export'),
-          headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 20));
+          headers: _authHeaders).timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) throw Exception('HTTP ${response.statusCode}: ${response.body}');
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
       await Clipboard.setData(ClipboardData(text: payload['content']?.toString() ?? ''));
@@ -250,7 +252,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         'limit': '100',
         'offset': '0',
         if (category != 'all') 'category': category,
-      }), headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 20));
+      }), headers: _authHeaders).timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
         throw Exception('Backend trả về HTTP ${response.statusCode}');
       }
@@ -301,7 +303,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
           'category': _uploadCategory,
         }),
       );
-      request.headers.addAll(apiAuthHeaders(widget.apiToken));
+      request.headers.addAll(_authHeaders);
       request.files.add(http.MultipartFile.fromBytes(
         'file',
         bytes,
@@ -364,7 +366,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       if (confirmed != true || !mounted) return;
       final response = await http.delete(
         _uri('/api/v1/knowledge/documents/$id'),
-        headers: apiAuthHeaders(widget.apiToken),
+        headers: _authHeaders,
       ).timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
         throw Exception('Backend trả về HTTP ${response.statusCode}');
@@ -412,7 +414,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
           'top_k': '8',
           if (_categoryFilter != 'all') 'category': _categoryFilter,
         }),
-        headers: apiAuthHeaders(widget.apiToken),
+        headers: _authHeaders,
       ).timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
         throw Exception('Backend trả về HTTP ${response.statusCode}: ${response.body}');
