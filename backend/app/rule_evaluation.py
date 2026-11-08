@@ -2,8 +2,34 @@
 from __future__ import annotations
 
 from typing import Any
+import hashlib
+import json
 
 from .analysis_report import build_analysis_report
+
+
+def _ohlcv_fingerprint(candles: list[dict]) -> str:
+    """Return a stable SHA-256 fingerprint for the exact ordered OHLCV input."""
+    canonical_rows = [
+        {
+            "timestamp": str(candle["timestamp"]),
+            "open": float(candle["open"]),
+            "high": float(candle["high"]),
+            "low": float(candle["low"]),
+            "close": float(candle["close"]),
+            "volume": float(candle["volume"]),
+            "source": str(candle.get("source", "unspecified")),
+        }
+        for candle in candles
+    ]
+    canonical = json.dumps(
+        canonical_rows,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def _signature(report: dict[str, Any]) -> dict[str, Any]:
@@ -70,6 +96,7 @@ def compare_rule_versions(candles: list[dict], rule_versions: list[dict]) -> dic
     if len(set(versions)) != len(versions):
         raise ValueError("Rule versions must be unique")
 
+    input_sha256 = _ohlcv_fingerprint(candles)
     signatures = {}
     for item in rule_versions:
         report = build_analysis_report(
@@ -96,6 +123,8 @@ def compare_rule_versions(candles: list[dict], rule_versions: list[dict]) -> dic
             "bars_available": first["bars_available"],
             "data_sources": first["data_sources"],
             "same_input_for_all_versions": True,
+            "input_fingerprint_algorithm": "sha256",
+            "input_sha256": input_sha256,
         },
         "versions_compared": list(signatures.keys()),
         "results": signatures,
