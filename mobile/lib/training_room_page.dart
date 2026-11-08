@@ -1328,7 +1328,6 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       final events = List<dynamic>.from(eventsPage['items'] as List);
       final quality = qualityPage['items'] as List;
       var total = eventsPage['total'] as int;
-      final offset = eventsPage['offset'] as int;
       final limit = eventsPage['limit'] as int;
       var loadingMore = false;
       var historyError = '';
