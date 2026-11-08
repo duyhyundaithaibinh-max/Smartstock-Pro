@@ -30,7 +30,7 @@ def tokenize(text: str) -> list[str]:
     return tokens
 
 
-def search_knowledge(query: str, top_k: int = 5) -> dict[str, Any]:
+def search_knowledge(query: str, top_k: int = 5, category: str | None = None) -> dict[str, Any]:
     """Search stored chunks and return deterministic, source-attributed hits."""
     clean_query = query.strip()
     if not clean_query or len(clean_query) > 500:
@@ -40,16 +40,23 @@ def search_knowledge(query: str, top_k: int = 5) -> dict[str, Any]:
 
     query_terms = list(dict.fromkeys(tokenize(clean_query)))
     if not query_terms:
-        return {"query": clean_query, "total": 0, "results": []}
+        return {"query": clean_query, "category": category, "total": 0, "results": []}
+
+    if category is not None:
+        from .knowledge_base import DOCUMENT_CATEGORIES
+        if category not in DOCUMENT_CATEGORIES:
+            raise ValueError("Unsupported document category")
 
     with connection() as conn:
         rows = conn.execute(
             """SELECT c.id AS chunk_id,c.document_id,c.chunk_index,c.content,
-                      c.char_start,c.char_end,d.filename,d.title,d.source,
+                      c.char_start,c.char_end,d.filename,d.title,d.source,d.category,
                       d.content_sha256,d.created_at
                FROM knowledge_chunks c
                JOIN knowledge_documents d ON d.id=c.document_id
-               ORDER BY c.document_id,c.chunk_index"""
+               WHERE (? IS NULL OR d.category=?)
+               ORDER BY c.document_id,c.chunk_index""",
+            (category, category),
         ).fetchall()
 
     if not rows:
@@ -102,6 +109,7 @@ def search_knowledge(query: str, top_k: int = 5) -> dict[str, Any]:
             "title": row["title"],
             "filename": row["filename"],
             "source": row["source"],
+            "category": row["category"],
             "content_sha256": row["content_sha256"],
             "created_at": row["created_at"],
             "char_start": row["char_start"],
@@ -110,7 +118,7 @@ def search_knowledge(query: str, top_k: int = 5) -> dict[str, Any]:
             "score": round(score, 6),
             "text": row["content"],
         })
-    return {"query": clean_query, "total": len(ranked), "results": results}
+    return {"query": clean_query, "category": category, "total": len(ranked), "results": results}
 
 
 def build_retrieval_context(search_result: dict[str, Any], max_chars: int = 12_000) -> dict[str, Any]:
@@ -140,6 +148,7 @@ def build_retrieval_context(search_result: dict[str, Any], max_chars: int = 12_0
             "title": item["title"],
             "filename": item["filename"],
             "source": item["source"],
+            "category": item.get("category", "other"),
             "content_sha256": item["content_sha256"],
             "text": excerpt,
         })
