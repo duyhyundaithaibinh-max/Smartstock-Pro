@@ -499,6 +499,15 @@ def get_active_analysis_rules():
     return rule_registry.get_active_version()
 
 
+@router.get("/analysis/rules/history")
+def get_analysis_rule_activation_history(
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
+    """Return append-only activation events, newest first."""
+    return rule_registry.list_activation_history(limit=limit, offset=offset)
+
+
 @router.post("/analysis/rules", status_code=201)
 def create_analysis_rule_version(payload: dict = Body(...)):
     """Create an immutable draft; existing versions can never be overwritten."""
