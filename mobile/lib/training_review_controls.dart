@@ -76,7 +76,7 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
   Future<void> _reject() async {
     final id = widget.example['id'];
     if (id is! int || widget.example['status'] != 'draft' || _sessionExpired) return;
-    final controller = TextEditingController();
+    var reasonText = '';
     String? validation;
     final reason = await showDialog<String>(context: context,
       builder: (dialogContext) => StatefulBuilder(builder: (context, refresh) =>
@@ -84,7 +84,8 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
           title: const Text('Từ chối ví dụ nháp'),
           content: Column(mainAxisSize: MainAxisSize.min, children: [
             const Text('Nhập lý do từ 1 đến 1.000 ký tự. Ví dụ sẽ không bị xóa.'),
-            TextField(key: const ValueKey('reject-reason'), controller: controller,
+            TextFormField(key: const ValueKey('reject-reason'), initialValue: '',
+              onChanged: (value) => reasonText = value,
               maxLength: 1000, minLines: 2, maxLines: 4,
               decoration: InputDecoration(labelText: 'Lý do', errorText: validation,
                 border: const OutlineInputBorder())),
@@ -93,7 +94,7 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
             TextButton(onPressed: () => Navigator.pop(dialogContext),
               child: const Text('Hủy')),
             FilledButton(key: const ValueKey('reject-confirm'), onPressed: () {
-              final value = controller.text.trim();
+              final value = reasonText.trim();
               if (value.isEmpty || value.length > 1000) {
                 refresh(() => validation = 'Lý do phải có 1–1.000 ký tự.');
                 return;
@@ -102,7 +103,6 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
             }, child: const Text('Từ chối')),
           ],
         )));
-    controller.dispose();
     if (reason == null || !mounted || _sessionExpired) return;
     await _run(() async {
       final response = await widget.httpClient.post(
@@ -152,11 +152,10 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
   Future<void> _edit() async {
     final id = widget.example['id'];
     if (id is! int || widget.example['status'] != 'draft' || _sessionExpired) return;
-    final question = TextEditingController(text: widget.example['question']?.toString() ?? '');
-    final answer = TextEditingController(text: widget.example['expected_answer']?.toString() ?? '');
-    final topic = TextEditingController(text: widget.example['topic']?.toString() ?? '');
-    final citations = TextEditingController(
-      text: (widget.example['citation_ids'] as List<dynamic>? ?? const []).join(', '));
+    var questionText = widget.example['question']?.toString() ?? '';
+    var answerText = widget.example['expected_answer']?.toString() ?? '';
+    var topicText = widget.example['topic']?.toString() ?? '';
+    var citationText = (widget.example['citation_ids'] as List<dynamic>? ?? const []).join(', ');
     var current = Map<String, dynamic>.from(widget.example);
     var revision = current['revision'] is int ? current['revision'] as int : 1;
     var finished = false;
@@ -168,29 +167,33 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
             title: Text('Sửa ví dụ #' + id.toString() + ' • revision ' + revision.toString()),
             content: SizedBox(width: 560, child: SingleChildScrollView(child: Column(
               mainAxisSize: MainAxisSize.min, children: [
-                TextField(key: const ValueKey('edit-question'), controller: question,
+                TextFormField(key: const ValueKey('edit-question'), initialValue: questionText,
+                  onChanged: (value) => questionText = value,
                   maxLength: 1000, minLines: 2, maxLines: 3,
                   decoration: const InputDecoration(labelText: 'Câu hỏi', border: OutlineInputBorder())),
                 const SizedBox(height: 8),
-                TextField(key: const ValueKey('edit-answer'), controller: answer,
+                TextFormField(key: const ValueKey('edit-answer'), initialValue: answerText,
+                  onChanged: (value) => answerText = value,
                   maxLength: 5000, minLines: 3, maxLines: 5,
                   decoration: const InputDecoration(labelText: 'Đáp án chuẩn', border: OutlineInputBorder())),
                 const SizedBox(height: 8),
-                TextField(key: const ValueKey('edit-topic'), controller: topic, maxLength: 80,
+                TextFormField(key: const ValueKey('edit-topic'), initialValue: topicText,
+                  onChanged: (value) => topicText = value, maxLength: 80,
                   decoration: const InputDecoration(labelText: 'Chủ đề', border: OutlineInputBorder())),
                 const SizedBox(height: 8),
-                TextField(key: const ValueKey('edit-citations'), controller: citations, maxLength: 1000,
+                TextFormField(key: const ValueKey('edit-citations'), initialValue: citationText,
+                  onChanged: (value) => citationText = value, maxLength: 1000,
                   decoration: const InputDecoration(labelText: 'Citation IDs (phân tách bằng dấu phẩy)',
                     border: OutlineInputBorder())),
               ]))),
             actions: [
               TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Hủy')),
               FilledButton(key: const ValueKey('edit-save'), onPressed: () {
-                final values = citations.text.split(',').map((v) => v.trim())
+                final values = citationText.split(',').map((v) => v.trim())
                   .where((v) => v.isNotEmpty).toList();
-                if (question.text.trim().length < 10 || question.text.trim().length > 1000 ||
-                    answer.text.trim().length < 20 || answer.text.trim().length > 5000 ||
-                    topic.text.trim().isEmpty || topic.text.trim().length > 80 ||
+                if (questionText.trim().length < 10 || question.text.trim().length > 1000 ||
+                    answerText.trim().length < 20 || answer.text.trim().length > 5000 ||
+                    topicText.trim().isEmpty || topic.text.trim().length > 80 ||
                     !_validCitationList(values)) {
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                     content: Text('Kiểm tra giới hạn nội dung và 1–10 citation hợp lệ.')));
@@ -271,15 +274,14 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_error(error))));
       }
     } finally {
-      question.dispose(); answer.dispose(); topic.dispose(); citations.dispose();
     }
   }
 
   Future<void> _qualityReview() async {
     final id = widget.example['id'];
     if (id is! int || _sessionExpired) return;
-    final score = TextEditingController();
-    final rationale = TextEditingController();
+    var scoreText = '';
+    var rationaleText = '';
     String rubric = 'qa-quality-v1';
     String? validation;
     final payload = await showDialog<Map<String, dynamic>>(context: context,
@@ -290,7 +292,8 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
             mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('Điểm do con người nhập; không lấy từ prediction metrics và không tự chấm bằng AI.'),
-              TextField(key: const ValueKey('quality-score'), controller: score,
+              TextFormField(key: const ValueKey('quality-score'), initialValue: '',
+                onChanged: (value) => scoreText = value,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(labelText: 'Điểm nguyên 0–100', errorText: validation,
                   border: const OutlineInputBorder())),
@@ -298,7 +301,8 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
                 decoration: const InputDecoration(labelText: 'Rubric', border: OutlineInputBorder()),
                 items: const [DropdownMenuItem(value: 'qa-quality-v1', child: Text('qa-quality-v1'))],
                 onChanged: (value) { if (value != null) refresh(() => rubric = value); }),
-              TextField(key: const ValueKey('quality-rationale'), controller: rationale,
+              TextFormField(key: const ValueKey('quality-rationale'), initialValue: '',
+                onChanged: (value) => rationaleText = value,
                 maxLength: 2000, minLines: 3, maxLines: 5,
                 decoration: const InputDecoration(labelText: 'Nhận xét (10–2.000 ký tự)',
                   border: OutlineInputBorder())),
@@ -306,10 +310,10 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
           actions: [
             TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Hủy')),
             FilledButton(key: const ValueKey('quality-submit'), onPressed: () {
-              final raw = score.text.trim();
+              final raw = scoreText.trim();
               final value = int.tryParse(raw);
               if (value == null || value < 0 || value > 100 ||
-                  rationale.text.trim().length < 10 || rationale.text.trim().length > 2000) {
+                  rationaleText.trim().length < 10 || rationale.text.trim().length > 2000) {
                 refresh(() => validation = 'Điểm nguyên 0–100 và nhận xét 10–2.000 ký tự là bắt buộc.');
                 return;
               }
@@ -320,7 +324,6 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
             }, child: const Text('Gửi đánh giá')),
           ],
         )));
-    score.dispose(); rationale.dispose();
     if (payload == null || !mounted || _sessionExpired) return;
     await _run(() async {
       final response = await widget.httpClient.post(
