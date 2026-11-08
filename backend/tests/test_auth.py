@@ -77,12 +77,13 @@ class LocalAuthenticationTests(unittest.TestCase):
         self.assertIsNone(self._bootstrap_row()["consumed_at"])
 
     def test_consumed_bootstrap_secret_is_rejected_even_without_owner(self):
-        with db.connection() as conn:
-            conn.execute(
-                "UPDATE auth_bootstrap SET consumed_at=CURRENT_TIMESTAMP WHERE id=1"
-            )
-
         with TestClient(app) as client:
+            # Mark it consumed after lifespan setup; startup repairs a consumed
+            # secret when no owner exists, which is a separate recovery path.
+            with db.connection() as conn:
+                conn.execute(
+                    "UPDATE auth_bootstrap SET consumed_at=CURRENT_TIMESTAMP WHERE id=1"
+                )
             response = client.post("/api/v1/auth/register-first-owner", json={
                 "username": "owner", "password": "a-long-test-password",
                 "bootstrap_secret": self.bootstrap_secret,
