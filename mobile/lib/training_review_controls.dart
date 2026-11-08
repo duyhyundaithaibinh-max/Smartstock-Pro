@@ -44,6 +44,7 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
     if (response.statusCode == 401) {
       if (!_sessionExpired) {
         _sessionExpired = true;
+        if (mounted) setState(() {});
         widget.onSessionExpired?.call(widget.apiToken);
       }
       throw const ApiRequestException(401);
@@ -74,7 +75,7 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
 
   Future<void> _reject() async {
     final id = widget.example['id'];
-    if (id is! int || widget.example['status'] != 'draft') return;
+    if (id is! int || widget.example['status'] != 'draft' || _sessionExpired) return;
     final controller = TextEditingController();
     String? validation;
     final reason = await showDialog<String>(context: context,
@@ -150,7 +151,7 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
 
   Future<void> _edit() async {
     final id = widget.example['id'];
-    if (id is! int || widget.example['status'] != 'draft') return;
+    if (id is! int || widget.example['status'] != 'draft' || _sessionExpired) return;
     final question = TextEditingController(text: widget.example['question']?.toString() ?? '');
     final answer = TextEditingController(text: widget.example['expected_answer']?.toString() ?? '');
     final topic = TextEditingController(text: widget.example['topic']?.toString() ?? '');
@@ -276,7 +277,7 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
 
   Future<void> _qualityReview() async {
     final id = widget.example['id'];
-    if (id is! int) return;
+    if (id is! int || _sessionExpired) return;
     final score = TextEditingController();
     final rationale = TextEditingController();
     String rubric = 'qa-quality-v1';
@@ -337,7 +338,7 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
 
   Future<void> _history() async {
     final id = widget.example['id'];
-    if (id is! int) return;
+    if (id is! int || _sessionExpired) return;
     await _run(() async {
       final headers = apiAuthHeaders(widget.apiToken);
       final responses = await Future.wait([
@@ -449,23 +450,23 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
     return Wrap(spacing: 8, runSpacing: 4, children: [
       if (isDraft) ...[
         TextButton.icon(
-          onPressed: _busy ? null : () => _run(widget.onApprove),
+          onPressed: (_busy || _sessionExpired) ? null : () => _run(widget.onApprove),
           icon: const Icon(Icons.verified_outlined), label: const Text('Duyệt')),
         TextButton.icon(
-          onPressed: _busy ? null : _edit,
+          onPressed: (_busy || _sessionExpired) ? null : _edit,
           icon: const Icon(Icons.edit_outlined), label: const Text('Sửa')),
         TextButton.icon(
-          onPressed: _busy ? null : _reject,
+          onPressed: (_busy || _sessionExpired) ? null : _reject,
           icon: const Icon(Icons.block_outlined), label: const Text('Từ chối')),
       ],
       TextButton.icon(
-        onPressed: _busy ? null : _qualityReview,
+        onPressed: (_busy || _sessionExpired) ? null : _qualityReview,
         icon: const Icon(Icons.fact_check_outlined), label: const Text('Human Quality Review')),
       TextButton.icon(
-        onPressed: _busy ? null : _history,
+        onPressed: (_busy || _sessionExpired) ? null : _history,
         icon: const Icon(Icons.history), label: const Text('Lịch sử')),
       TextButton.icon(
-        onPressed: _busy ? null : () => _run(widget.onDelete),
+        onPressed: (_busy || _sessionExpired) ? null : () => _run(widget.onDelete),
         icon: const Icon(Icons.delete_outline), label: const Text('Xóa')),
     ]);
   }
