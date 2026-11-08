@@ -20,6 +20,10 @@ def _signature(report: dict[str, Any]) -> dict[str, Any]:
         "bars_available": report["bars_available"],
         "data_sources": report.get("data_quality", {}).get("sources", []),
         "trend": trend_data.get("classification", trend_data.get("status", "unknown")),
+        "trend_ema_parameters": {
+            "fast_period": trend_data.get("ema_fast_period"),
+            "slow_period": trend_data.get("ema_slow_period"),
+        },
         "breakout": breakout.get("state", "unknown"),
         "price_action_parameters": {
             "pivot_lookback_bars": trend.get("price_zones", {}).get("lookback_bars"),
