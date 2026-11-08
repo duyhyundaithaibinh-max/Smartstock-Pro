@@ -32,6 +32,7 @@ class KnowledgeApiContractTests(unittest.TestCase):
         hit = response["results"][0]
         passage = response["retrieval_context"]["passages"][0]
         self.assertEqual(hit["document_id"], document["id"])
+        self.assertEqual(hit["category"], "other")
         self.assertEqual(passage["citation_id"], hit["citation_id"])
         self.assertEqual(passage["document_id"], hit["document_id"])
         self.assertEqual(passage["chunk_id"], hit["chunk_id"])
@@ -40,6 +41,25 @@ class KnowledgeApiContractTests(unittest.TestCase):
         self.assertEqual(passage["char_end"], hit["char_end"])
         self.assertEqual(passage["content_sha256"], hit["content_sha256"])
         self.assertEqual(response["retrieval_context"]["status"], "ready")
+
+    def test_category_filter_limits_search_and_document_list(self):
+        fibonacci = knowledge_base.ingest_document(
+            "fib.md", b"Fibonacci retracement and time projection", category="fibonacci"
+        )
+        knowledge_base.ingest_document(
+            "wyckoff.md", b"Wyckoff accumulation distribution volume", category="wyckoff"
+        )
+
+        results = market.search_knowledge_documents("accumulation Fibonacci", top_k=10, category="fibonacci")
+        self.assertGreaterEqual(results["total"], 1)
+        self.assertTrue(all(item["category"] == "fibonacci" for item in results["results"]))
+        listed = market.list_knowledge_documents(limit=100, offset=0, category="fibonacci")
+        self.assertEqual(listed["total"], 1)
+        self.assertEqual(listed["items"][0]["id"], fibonacci["id"])
+
+    def test_invalid_category_is_rejected(self):
+        with self.assertRaises(knowledge_base.KnowledgeBaseError):
+            knowledge_base.ingest_document("bad.txt", b"content", category="unknown")
 
     def test_search_api_returns_explicit_no_evidence_state(self):
         response = market.search_knowledge_documents("khong co tai lieu nay", top_k=5)
