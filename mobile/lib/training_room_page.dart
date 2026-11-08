@@ -37,6 +37,10 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   bool _loading = false;
   bool _uploading = false;
   bool _documentsLoading = false;
+  int _documentsRequestId = 0;
+  int _searchRequestId = 0;
+  int _trainingDataRequestId = 0;
+  final Set<int> _deletingDocumentIds = <int>{};
   bool _searched = false;
   String _categoryFilter = 'all';
   String _uploadCategory = 'other';
@@ -60,6 +64,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   }
 
   Future<void> _loadTrainingData() async {
+    final requestId = ++_trainingDataRequestId;
     if (mounted) {
       setState(() {
         _trainingDataLoading = true;
@@ -81,17 +86,19 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       }
       final examples = jsonDecode(responses[0].body) as Map<String, dynamic>;
       final evaluation = jsonDecode(responses[1].body) as Map<String, dynamic>;
-      if (!mounted) return;
+      if (!mounted || requestId != _trainingDataRequestId) return;
       setState(() {
         _examples = examples['items'] as List<dynamic>? ?? [];
         _evaluation = evaluation;
       });
     } catch (error) {
-      if (mounted) {
+      if (mounted && requestId == _trainingDataRequestId) {
         setState(() => _error = 'Không tải được bộ dữ liệu huấn luyện: $error');
       }
     } finally {
-      if (mounted) setState(() => _trainingDataLoading = false);
+      if (mounted && requestId == _trainingDataRequestId) {
+        setState(() => _trainingDataLoading = false);
+      }
     }
   }
 
@@ -223,6 +230,8 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     }
   }
   Future<void> _loadDocuments() async {
+    final requestId = ++_documentsRequestId;
+    final category = _categoryFilter;
     setState(() {
       _documentsLoading = true;
       _error = null;
@@ -231,18 +240,22 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       final response = await http.get(_uri('/api/v1/knowledge/documents', {
         'limit': '100',
         'offset': '0',
-        if (_categoryFilter != 'all') 'category': _categoryFilter,
+        if (category != 'all') 'category': category,
       }), headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
         throw Exception('Backend trả về HTTP ${response.statusCode}');
       }
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
-      if (!mounted) return;
+      if (!mounted || requestId != _documentsRequestId) return;
       setState(() => _documents = payload['items'] as List<dynamic>? ?? []);
     } catch (error) {
-      if (mounted) setState(() => _error = 'Không tải được danh sách tài liệu: $error');
+      if (mounted && requestId == _documentsRequestId) {
+        setState(() => _error = 'Không tải được danh sách tài liệu: $error');
+      }
     } finally {
-      if (mounted) setState(() => _documentsLoading = false);
+      if (mounted && requestId == _documentsRequestId) {
+        setState(() => _documentsLoading = false);
+      }
     }
   }
 
@@ -314,8 +327,11 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
 
   Future<void> _deleteDocument(Map<String, dynamic> document) async {
     final id = document['id'];
+    if (id is! int || _deletingDocumentIds.contains(id)) return;
+    setState(() => _deletingDocumentIds.add(id));
     final title = document['title']?.toString() ?? document['filename']?.toString() ?? 'tài liệu';
-    final confirmed = await showDialog<bool>(
+    try {
+      final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Xóa tài liệu?'),
@@ -331,9 +347,8 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
           ),
         ],
       ),
-    );
-    if (confirmed != true || id is! int) return;
-    try {
+      );
+      if (confirmed != true || !mounted) return;
       final response = await http.delete(
         _uri('/api/v1/knowledge/documents/$id'),
         headers: apiAuthHeaders(widget.apiToken),
@@ -351,10 +366,13 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       );
     } catch (error) {
       if (mounted) setState(() => _error = 'Không xóa được tài liệu: $error');
+    } finally {
+      if (mounted) setState(() => _deletingDocumentIds.remove(id));
     }
   }
 
   Future<void> _search() async {
+    final requestId = ++_searchRequestId;
     final query = _queryController.text.trim();
     if (query.isEmpty) {
       setState(() => _error = 'Nhập nội dung cần tìm trong kho tri thức.');
@@ -378,15 +396,19 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         throw Exception('Backend trả về HTTP ${response.statusCode}: ${response.body}');
       }
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
-      if (!mounted) return;
+      if (!mounted || requestId != _searchRequestId) return;
       setState(() {
         _results = payload['results'] as List<dynamic>? ?? [];
         _context = payload['retrieval_context'] as Map<String, dynamic>?;
       });
     } catch (error) {
-      if (mounted) setState(() => _error = 'Không tìm kiếm được: $error');
+      if (mounted && requestId == _searchRequestId) {
+        setState(() => _error = 'Không tìm kiếm được: $error');
+      }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && requestId == _searchRequestId) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -512,7 +534,9 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         trailing: IconButton(
           tooltip: 'Xóa tài liệu',
           icon: const Icon(Icons.delete_outline),
-          onPressed: () => _deleteDocument(item),
+          onPressed: item['id'] is int && _deletingDocumentIds.contains(item['id'])
+              ? null
+              : () => _deleteDocument(item),
         ),
       ),
     );
