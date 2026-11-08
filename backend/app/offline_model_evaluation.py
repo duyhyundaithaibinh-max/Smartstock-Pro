@@ -5,6 +5,7 @@ a locally run model, using reviewed answers and source-citation metadata.
 """
 from __future__ import annotations
 
+import json
 import re
 from collections import Counter
 from typing import Any
@@ -13,7 +14,7 @@ from .db import connection
 from .training_room import _citation_exists
 
 
-_TOKEN = re.compile(r"[^\W_]+", re.UNICODE)
+_TOKEN = re.compile(r"[^\\W_]+", re.UNICODE)
 
 
 def _tokens(value: str) -> Counter[str]:
@@ -45,7 +46,8 @@ def evaluate_predictions(predictions: Any) -> dict[str, Any]:
         example_id = item.get("example_id")
         answer = item.get("answer")
         citations = item.get("citation_ids", [])
-        if not isinstance(example_id, int) or example_id < 1:
+        # bool is a subclass of int in Python, but JSON true/false are not IDs.
+        if type(example_id) is not int or example_id < 1:
             raise ValueError("example_id must be a positive integer.")
         if example_id in normalized:
             raise ValueError(f"Duplicate prediction for example_id={example_id}.")
@@ -75,7 +77,7 @@ def evaluate_predictions(predictions: Any) -> dict[str, Any]:
         rows = []
         for example_id, prediction in normalized.items():
             reference = approved[example_id]
-            gold_citations = set(__import__("json").loads(reference["citation_ids"]))
+            gold_citations = set(json.loads(reference["citation_ids"]))
             predicted_citations = set(prediction["citation_ids"])
             valid_predicted = {
                 citation for citation in predicted_citations
