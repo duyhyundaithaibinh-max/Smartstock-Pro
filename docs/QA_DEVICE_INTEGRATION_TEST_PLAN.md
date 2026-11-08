@@ -8,10 +8,12 @@ APK artifact: `smartstock-pro-debug-apk`, ID `13605841116`.
 
 **Do not expose an uninitialized instance to a shared LAN.** First-owner registration is unauthenticated, while the current Docker Compose port mapping publishes port 8000 on all host interfaces. A LAN client could race to claim the first-owner account.
 
-Until a bootstrap mitigation is implemented and tested:
-- Use an isolated development machine/loopback-only environment for first-owner tests.
-- Do not port-forward the API or expose it to a shared Wi-Fi/LAN or the public Internet.
-- The coordinator must choose a one-time bootstrap secret or a loopback-only default with an explicit protected LAN setup procedure. The latter may affect physical Android connectivity.
+A one-time bootstrap secret is now implemented in SP-019:
+- Start the backend once, then read the secret only from a trusted host administration terminal: Docker Compose: `docker compose exec api python -m scripts.show_bootstrap_secret`; direct backend: `cd backend && python -m scripts.show_bootstrap_secret`.
+- Enter the secret in the Android first-owner setup field. Never paste it into chat, tickets, screenshots or logs.
+- The secret is single-use and is stored as a SHA-256 digest in SQLite; the plaintext file is owner-only (0600 on POSIX) and is removed after successful owner creation.
+- Bootstrap over HTTPS or an isolated/trusted administration network only. HTTP on an untrusted Wi-Fi/LAN can expose the secret in transit. Do not port-forward or expose the API to the public Internet.
+- The helper command has been verified from source/package layout and Dockerfile working directory; it has not yet been smoke-tested on the actual deployment host.
 
 ## A. Install and launch
 
@@ -20,7 +22,7 @@ Until a bootstrap mitigation is implemented and tested:
 | A1 | Install the debug APK on a supported Android device. | Installation completes without signing/release assumptions. |
 | A2 | Launch with an empty backend database. | App shows first-owner setup, not an authenticated dashboard. |
 | A3 | Enter invalid/short username or password. | Validation is clear; no owner is created. |
-| A4 | Complete first-owner setup on isolated local backend. | Exactly one owner is created; app can proceed to login/session. |
+| A4 | Read bootstrap secret on the trusted host and complete first-owner setup over HTTPS/trusted isolated network. | Exactly one owner is created; app receives a session and the plaintext secret is no longer available. |
 | A5 | Attempt a second first-owner registration. | Server rejects it (HTTP 409); existing owner remains unchanged. |
 
 ## B. Authentication and API authorization
