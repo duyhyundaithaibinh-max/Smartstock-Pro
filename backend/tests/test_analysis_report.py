@@ -94,7 +94,7 @@ class AnalysisReportTests(unittest.TestCase):
         self.assertEqual(result["indicators"]["macd_signal_period"], 5)
         self.assertEqual(result["indicators"]["atr_period"], 10)
         self.assertIsInstance(result["indicators"]["rsi"], float)
-        self.assertNotIn("rsi14", result["indicators"])
+        self.assertIsNone(result["indicators"]["rsi14"])
 
 
 
