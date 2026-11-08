@@ -19,9 +19,6 @@ class KnowledgeRetrievalTests(unittest.TestCase):
         self.patch_db.stop()
         self.temp_dir.cleanup()
 
-    def test_tokenizer_preserves_vietnamese_diacritics_and_casefolds(self):
-        self.assertEqual(tokenize("FIBONACCI và Phân Tích"), ["fibonacci", "và", "phân", "tích"])
-
     def test_tokenizer_matches_vietnamese_without_diacritics(self):
         self.assertEqual(tokenize("FIBONACCI và Phân Tích"), ["fibonacci", "va", "phan", "tich"])
         self.assertEqual(tokenize("TÍCH LŨY ĐƯỜNG"), ["tich", "luy", "duong"])
