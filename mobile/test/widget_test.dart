@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:smartstock_pro/api_auth.dart';
+import 'package:smartstock_pro/chart_page.dart';
+import 'package:smartstock_pro/training_room_page.dart';
 import 'package:smartstock_pro/main.dart' show DashboardPage;
 
 const _token = 'test-session-token';
@@ -337,6 +339,84 @@ void main() {
     expect(find.text('SmartStock Pro • Đăng nhập'), findsOneWidget);
     expect(find.text('Danh sách theo dõi'), findsNothing);
     expect(requests.last.headers['authorization'], 'Bearer $_token');
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('Chart HTTP 401 invokes session expiry without rendering response body',
+      (tester) async {
+    var expiredToken = '';
+    final client = MockClient((request) async => http.Response(
+      '<html>CHART-TRACEBACK-$_token</html>',
+      401,
+    ));
+    await tester.pumpWidget(MaterialApp(
+      home: ChartPage(
+        baseUrl: 'http://test',
+        symbol: 'FPT',
+        apiToken: _token,
+        httpClient: client,
+        onSessionExpired: (token) => expiredToken = token,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(expiredToken, _token);
+    expect(find.textContaining('CHART-TRACEBACK'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('Training Room 401s invoke expiry and never render raw response bodies',
+      (tester) async {
+    var expiredCalls = 0;
+    final client = MockClient((request) async => http.Response(
+      '<html>TRAINING-TRACEBACK-$_token</html>',
+      401,
+    ));
+    await tester.pumpWidget(MaterialApp(
+      home: TrainingRoomPage(
+        baseUrl: 'http://test',
+        apiToken: _token,
+        httpClient: client,
+        onSessionExpired: (token) {
+          expect(token, _token);
+          expiredCalls++;
+        },
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(expiredCalls, greaterThanOrEqualTo(1));
+    expect(find.textContaining('TRAINING-TRACEBACK'), findsNothing);
+    expect(
+      find.textContaining(
+        'Phiên đăng nhập đã hết hạn hoặc bị thu hồi. Vui lòng đăng nhập lại.',
+      ),
+      findsWidgets,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('Training Room 422 sanitizes HTML and traceback response bodies',
+      (tester) async {
+    final client = MockClient((request) async => http.Response(
+      '<html><pre>SQL-TRACEBACK-PRIVATE-DETAIL</pre></html>',
+      422,
+    ));
+    await tester.pumpWidget(MaterialApp(
+      home: TrainingRoomPage(
+        baseUrl: 'http://test',
+        apiToken: _token,
+        httpClient: client,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('SQL-TRACEBACK'), findsNothing);
+    expect(find.textContaining('PRIVATE-DETAIL'), findsNothing);
+    expect(find.textContaining('Dữ liệu gửi lên chưa hợp lệ'), findsWidgets);
     await tester.pumpWidget(const SizedBox.shrink());
     client.close();
   });
