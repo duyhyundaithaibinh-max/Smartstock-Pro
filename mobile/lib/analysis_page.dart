@@ -102,6 +102,122 @@ class _AnalysisPageState extends State<AnalysisPage> {
     );
   }
 
+
+  Map<String, dynamic> _map(dynamic value) =>
+      value is Map ? Map<String, dynamic>.from(value) : <String, dynamic>{};
+
+  List<dynamic> _items(dynamic value) => value is List ? value : const [];
+
+  String _fmt(dynamic value) =>
+      value is num ? value.toStringAsFixed(2) : '—';
+
+  Widget _fibCard(Map<String, dynamic> fib) {
+    final swing = _map(fib['swing']);
+    final start = _map(swing['start']);
+    final end = _map(swing['end']);
+    final price = _map(fib['price']);
+    final time = _map(fib['time']);
+    final status = fib['status']?.toString() ?? 'unknown';
+    Widget rows(String title, dynamic raw, {bool timeRows = false}) {
+      final values = _items(raw).whereType<Map>().toList();
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+        if (values.isEmpty) const Text('Chưa có dữ liệu.'),
+        ...values.map((rawValue) {
+          final value = _map(rawValue);
+          final ratio = value['ratio'] is num ? (value['ratio'] as num) * 100 : null;
+          final detail = timeRows
+              ? '${value['bars_from_latest'] ?? '—'} nến • ${value['position'] ?? '—'}'
+              : _fmt(value['price']);
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(children: [
+              SizedBox(width: 72, child: Text(ratio == null ? '—' : '${ratio.toStringAsFixed(1)}%')),
+              Expanded(child: Text(detail)),
+            ]),
+          );
+        }),
+      ]);
+    }
+    return Card(child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Fibonacci giá và thời gian', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        if (status != 'ok')
+          Text(fib['message']?.toString() ?? 'Chưa đủ pivot xác nhận ($status).')
+        else ...[
+          Text('Swing: ${start['type'] ?? '—'} ${_fmt(start['price'])} → ${end['type'] ?? '—'} ${_fmt(end['price'])}'),
+          Text('Độ dài: ${swing['duration_bars'] ?? '—'} nến'),
+          const Divider(),
+          rows('Thoái lui', price['retracements']),
+          const SizedBox(height: 6),
+          rows('Mở rộng', price['extensions']),
+          const SizedBox(height: 6),
+          rows('Dự phóng thời gian (nến giao dịch)', time['projections'], timeRows: true),
+        ],
+      ]),
+    ));
+  }
+
+  Widget _elliottCard(Map<String, dynamic> elliott) {
+    final candidate = _map(elliott['candidate']);
+    final status = elliott['status']?.toString() ?? 'unknown';
+    final pivots = _items(candidate['pivots']).whereType<Map>().toList();
+    final waves = _items(candidate['waves']).whereType<Map>().toList();
+    final checks = _items(candidate['rule_checks']).whereType<Map>().toList();
+    final confirmed = _items(elliott['confirmed_pivots']).whereType<Map>().toList();
+    return Card(child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Cấu trúc sóng Elliott', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        if (candidate.isEmpty) ...[
+          Text(elliott['message']?.toString() ?? 'Chưa có impulse 5 sóng đủ điều kiện ($status).'),
+          ...confirmed.map((raw) {
+            final p = _map(raw);
+            return Text('Pivot ${p['type'] ?? '—'}: ${_fmt(p['price'])} • ${p['timestamp'] ?? '—'}');
+          }),
+        ] else ...[
+          Row(children: [
+            Expanded(child: Text(candidate['direction'] == 'bullish' ? 'Impulse tăng' : 'Impulse giảm')),
+            Chip(label: Text(status)),
+          ]),
+          Text('Điểm quy tắc: ${candidate['rule_score'] ?? '—'} / 100, không phải xác suất.'),
+          const SizedBox(height: 6),
+          const Text('Pivot P0–P5:', style: TextStyle(fontWeight: FontWeight.w600)),
+          ...pivots.map((raw) {
+            final p = _map(raw);
+            return Text('${p['label'] ?? ''}: ${_fmt(p['price'])} • ${p['timestamp'] ?? '—'}');
+          }),
+          const Divider(),
+          const Text('Độ dài sóng:', style: TextStyle(fontWeight: FontWeight.w600)),
+          ...waves.map((raw) {
+            final w = _map(raw);
+            return Text('${w['wave'] ?? 'Wave'}: ${_fmt(w['length'])}');
+          }),
+          const Divider(),
+          const Text('Kiểm tra quy tắc:', style: TextStyle(fontWeight: FontWeight.w600)),
+          ...checks.map((raw) {
+            final c = _map(raw);
+            final ok = c['passed'] == true;
+            return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Icon(ok ? Icons.check_circle_outline : Icons.cancel_outlined,
+                size: 18, color: ok ? Colors.green : Theme.of(context).colorScheme.error),
+              const SizedBox(width: 6),
+              Expanded(child: Text(c['explanation']?.toString() ?? '')),
+            ]);
+          }),
+          const SizedBox(height: 6),
+          Text('Xác nhận: ${candidate['confirmation_condition'] ?? '—'}'),
+          Text('Vô hiệu: ${candidate['invalidation_condition'] ?? '—'}'),
+        ],
+        const SizedBox(height: 6),
+        const Text('Elliott là giả thuyết cấu trúc; cách đếm có thể thay đổi theo pivot và cửa sổ dữ liệu.'),
+      ]),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final report = _report ?? {};
@@ -156,6 +272,29 @@ class _AnalysisPageState extends State<AnalysisPage> {
                   ),
                 ),
               ),
+
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Hỗ trợ và kháng cự', style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 8),
+                      Text('Hỗ trợ: ${_items(_map(_map(report['trend_and_price_action'])['price_zones'])['supports']).map((v) => _fmt(_map(v)['price'])).join(' • ')}'),
+                      Text('Kháng cự: ${_items(_map(_map(report['trend_and_price_action'])['price_zones'])['resistances']).map((v) => _fmt(_map(v)['price'])).join(' • ')}'),
+                      const SizedBox(height: 8),
+                      Text('Breakout: ${_map(_map(report['trend_and_price_action'])['breakout'])['state'] ?? 'Chưa xác định'}'),
+                      Text('Biên trên: ${_fmt(_map(_map(report['trend_and_price_action'])['breakout'])['prior_range_high'])}'),
+                      Text('Biên dưới: ${_fmt(_map(_map(report['trend_and_price_action'])['breakout'])['prior_range_low'])}'),
+                      Text('Tỷ lệ volume: ${_fmt(_map(_map(report['trend_and_price_action'])['breakout'])['volume_ratio'])}'),
+                      Text(_map(_map(report['trend_and_price_action'])['breakout'])['confirmation_condition']?.toString() ?? 'Chưa có điều kiện xác nhận.'),
+                    ],
+                  ),
+                ),
+              ),
+              _fibCard(_map(report['fibonacci'])),
+              _elliottCard(_map(report['elliott'])),
               Padding(
                 padding: const EdgeInsets.fromLTRB(4, 12, 4, 4),
                 child: Text('Ba kịch bản thị trường', style: Theme.of(context).textTheme.titleLarge),
