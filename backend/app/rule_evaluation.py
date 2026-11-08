@@ -2,8 +2,34 @@
 from __future__ import annotations
 
 from typing import Any
+import hashlib
+import json
 
 from .analysis_report import build_analysis_report
+
+
+def _ohlcv_fingerprint(candles: list[dict]) -> str:
+    """Return a stable SHA-256 fingerprint for the exact ordered OHLCV input."""
+    canonical_rows = [
+        {
+            "timestamp": str(candle["timestamp"]),
+            "open": float(candle["open"]),
+            "high": float(candle["high"]),
+            "low": float(candle["low"]),
+            "close": float(candle["close"]),
+            "volume": float(candle["volume"]),
+            "source": str(candle.get("source", "unspecified")),
+        }
+        for candle in candles
+    ]
+    canonical = json.dumps(
+        canonical_rows,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def _signature(report: dict[str, Any]) -> dict[str, Any]:
@@ -13,6 +39,7 @@ def _signature(report: dict[str, Any]) -> dict[str, Any]:
     fibonacci = report.get("fibonacci", {})
     elliott = report.get("elliott", {})
     flow = report.get("volume_flow", {})
+    indicator_data = report.get("indicators", {})
     return {
         "rule_version": report["analysis_rules_version"],
         "config_sha256": report.get("analysis_rule_config_sha256"),
@@ -37,7 +64,19 @@ def _signature(report: dict[str, Any]) -> dict[str, Any]:
         "elliott_status": elliott.get("status", "unknown"),
         "elliott_rule_score": elliott.get("rule_score"),
         "volume_flow_window": flow.get("window", report.get("analysis_rule_parameters", {}).get("volume_flow", {}).get("window", 20)),
-        "indicator_parameters": report.get("indicators", {}),
+        # Keep configuration separate from the numeric outputs calculated on OHLCV.
+        "indicator_parameters": {
+            key: indicator_data.get(key)
+            for key in (
+                "rsi_period", "ema_fast_period", "ema_slow_period",
+                "macd_fast_period", "macd_slow_period",
+                "macd_signal_period", "atr_period",
+            )
+        },
+        "indicator_values": {
+            key: indicator_data.get(key)
+            for key in ("rsi", "ema_fast", "ema_slow", "macd", "macd_signal", "atr")
+        },
         "volume_flow_classification": flow.get("classification", flow.get("status", "unknown")),
         "scenario_statuses": {
             item["name"]: item["status"] for item in report.get("scenarios", [])
@@ -57,6 +96,7 @@ def compare_rule_versions(candles: list[dict], rule_versions: list[dict]) -> dic
     if len(set(versions)) != len(versions):
         raise ValueError("Rule versions must be unique")
 
+    input_sha256 = _ohlcv_fingerprint(candles)
     signatures = {}
     for item in rule_versions:
         report = build_analysis_report(
@@ -83,6 +123,8 @@ def compare_rule_versions(candles: list[dict], rule_versions: list[dict]) -> dic
             "bars_available": first["bars_available"],
             "data_sources": first["data_sources"],
             "same_input_for_all_versions": True,
+            "input_fingerprint_algorithm": "sha256",
+            "input_sha256": input_sha256,
         },
         "versions_compared": list(signatures.keys()),
         "results": signatures,
