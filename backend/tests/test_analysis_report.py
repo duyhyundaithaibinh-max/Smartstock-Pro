@@ -44,6 +44,13 @@ class AnalysisReportTests(unittest.TestCase):
 
     def test_report_uses_active_rule_configuration_and_version(self):
         config = {
+            "price_action": {
+                "lookback": 60,
+                "wing": 3,
+                "range_lookback": 30,
+                "volume_confirmation_pct": 150,
+                "breakout_buffer_atr_pct": 50,
+            },
             "fibonacci": {"lookback": 40, "wing": 1},
             "elliott": {"lookback": 60, "wing": 1},
             "volume_flow": {"window": 12},
@@ -61,6 +68,11 @@ class AnalysisReportTests(unittest.TestCase):
         self.assertEqual(result["analysis_rules_version"], "2.1.0")
         self.assertEqual(result["analysis_rule_config_sha256"], "a" * 64)
         self.assertEqual(result["volume_flow"]["window"], 12)
+        self.assertEqual(result["trend_and_price_action"]["price_zones"]["lookback_bars"], 60)
+        self.assertEqual(result["trend_and_price_action"]["price_zones"]["pivot_wing"], 3)
+        self.assertEqual(result["trend_and_price_action"]["breakout"]["range_lookback_bars"], 30)
+        self.assertEqual(result["trend_and_price_action"]["breakout"]["volume_confirmation_threshold"], 1.5)
+        self.assertEqual(result["trend_and_price_action"]["breakout"]["price_buffer_atr"], 0.5)
         self.assertEqual(fibonacci_mock.call_args.kwargs["lookback"], 40)
         self.assertEqual(fibonacci_mock.call_args.kwargs["wing"], 1)
 
