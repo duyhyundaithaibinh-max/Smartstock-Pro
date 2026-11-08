@@ -66,10 +66,13 @@ class _DashboardPageState extends State<DashboardPage> {
       }
 
       final watchlistResponse = await http
-          .get(Uri.parse('$_baseUrl/api/v1/watchlist'), headers: apiAuthHeaders(_tokenController.text))
+          .get(
+            Uri.parse('$_baseUrl/api/v1/watchlist'),
+            headers: apiAuthHeaders(_tokenController.text),
+          )
           .timeout(const Duration(seconds: 8));
       if (watchlistResponse.statusCode != 200) {
-        throw Exception('Không tải được danh sách theo dõi');
+        throw Exception('Không tải được danh sách theo dõi: HTTP ${watchlistResponse.statusCode}');
       }
 
       final health = jsonDecode(healthResponse.body) as Map<String, dynamic>;
@@ -90,7 +93,6 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
-
   Future<void> _createAndAddSymbol() async {
     final symbol = _symbolController.text.trim().toUpperCase();
     final name = _nameController.text.trim();
@@ -100,34 +102,55 @@ class _DashboardPageState extends State<DashboardPage> {
       );
       return;
     }
+
     setState(() => _addingSymbol = true);
     try {
       final headers = <String, String>{
         'Content-Type': 'application/json',
         ...apiAuthHeaders(_tokenController.text),
       };
-      final createResponse = await http.post(
-        Uri.parse('$_baseUrl/api/v1/symbols'),
-        headers: headers,
-        body: jsonEncode({'symbol': symbol, 'name': name, 'exchange': _exchange}),
-      ).timeout(const Duration(seconds: 12));
-      if (createResponse.statusCode != 201 && createResponse.statusCode != 409) {
-        throw Exception('Không tạo được mã: HTTP ' + createResponse.statusCode.toString());
+      final createResponse = await http
+          .post(
+            Uri.parse('$_baseUrl/api/v1/symbols'),
+            headers: headers,
+            body: jsonEncode({
+              'symbol': symbol,
+              'name': name,
+              'exchange': _exchange,
+            }),
+          )
+          .timeout(const Duration(seconds: 12));
+      if (createResponse.statusCode != 201 &&
+          createResponse.statusCode != 409) {
+        throw Exception(
+          'Không tạo được mã: HTTP ${createResponse.statusCode} ${createResponse.body}',
+        );
       }
-      final watchlistResponse = await http.post(
-        Uri.parse('$_baseUrl/api/v1/watchlist').replace(
-          queryParameters: {'symbol': symbol},
-        ),
-        headers: apiAuthHeaders(_tokenController.text),
-      ).timeout(const Duration(seconds: 12));
-      if (watchlistResponse.statusCode != 201 && watchlistResponse.statusCode != 409) {
-        throw Exception('Không thêm được vào watchlist: HTTP ' + watchlistResponse.statusCode.toString());
+
+      final watchlistResponse = await http
+          .post(
+            Uri.parse('$_baseUrl/api/v1/watchlist').replace(
+              queryParameters: {'symbol': symbol},
+            ),
+            headers: apiAuthHeaders(_tokenController.text),
+          )
+          .timeout(const Duration(seconds: 12));
+      if (watchlistResponse.statusCode != 201 &&
+          watchlistResponse.statusCode != 409) {
+        throw Exception(
+          'Không thêm được vào watchlist: HTTP ${watchlistResponse.statusCode} ${watchlistResponse.body}',
+        );
       }
+
       _symbolController.clear();
       _nameController.clear();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Đã thêm $symbol vào danh sách theo dõi. Cần nhập OHLCV hợp pháp để phân tích.')),
+        SnackBar(
+          content: Text(
+            'Đã thêm $symbol vào danh sách theo dõi. Hãy nhập OHLCV hợp pháp để phân tích.',
+          ),
+        ),
       );
       await _connect();
     } catch (error) {
@@ -144,7 +167,11 @@ class _DashboardPageState extends State<DashboardPage> {
   void _openChart(String symbol) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => ChartPage(baseUrl: _baseUrl, symbol: symbol, apiToken: _tokenController.text.trim()),
+        builder: (_) => ChartPage(
+          baseUrl: _baseUrl,
+          symbol: symbol,
+          apiToken: _tokenController.text.trim(),
+        ),
       ),
     );
   }
@@ -152,7 +179,10 @@ class _DashboardPageState extends State<DashboardPage> {
   void _openTrainingRoom() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => TrainingRoomPage(baseUrl: _baseUrl, apiToken: _tokenController.text.trim()),
+        builder: (_) => TrainingRoomPage(
+          baseUrl: _baseUrl,
+          apiToken: _tokenController.text.trim(),
+        ),
       ),
     );
   }
@@ -202,7 +232,8 @@ class _DashboardPageState extends State<DashboardPage> {
                       obscureText: true,
                       decoration: const InputDecoration(
                         labelText: 'API Bearer Token (nếu backend bật bảo vệ)',
-                        helperText: 'Để trống khi chạy local ở chế độ phát triển.',
+                        helperText:
+                            'Để trống khi chạy local ở chế độ phát triển.',
                         border: OutlineInputBorder(),
                       ),
                       autocorrect: false,
@@ -254,14 +285,14 @@ class _DashboardPageState extends State<DashboardPage> {
             Text('Danh sách theo dõi',
                 style: theme.textTheme.titleLarge),
             const SizedBox(height: 8),
-
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Thêm mã vào danh sách', style: theme.textTheme.titleMedium),
+                    Text('Thêm mã vào danh sách',
+                        style: theme.textTheme.titleMedium),
                     const SizedBox(height: 10),
                     TextField(
                       controller: _symbolController,
@@ -292,17 +323,26 @@ class _DashboardPageState extends State<DashboardPage> {
                         DropdownMenuItem(value: 'HNX', child: Text('HNX')),
                         DropdownMenuItem(value: 'UPCOM', child: Text('UPCoM')),
                       ],
-                      onChanged: _addingSymbol ? null : (value) {
-                        if (value != null) setState(() => _exchange = value);
-                      },
+                      onChanged: _addingSymbol
+                          ? null
+                          : (value) {
+                              if (value != null) {
+                                setState(() => _exchange = value);
+                              }
+                            },
                     ),
                     const SizedBox(height: 8),
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
-                        onPressed: _addingSymbol ? null : _createAndAddSymbol,
+                        onPressed:
+                            _addingSymbol ? null : _createAndAddSymbol,
                         icon: const Icon(Icons.add),
-                        label: Text(_addingSymbol ? 'Đang thêm mã...' : 'Tạo mã và thêm vào watchlist'),
+                        label: Text(
+                          _addingSymbol
+                              ? 'Đang thêm mã...'
+                              : 'Tạo mã và thêm vào watchlist',
+                        ),
                       ),
                     ),
                     const Text(
@@ -319,7 +359,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 child: Padding(
                   padding: EdgeInsets.all(18),
                   child: Text(
-                    'Chưa có mã trong watchlist. Hãy thêm mã qua API sau khi tạo mã và nhập dữ liệu.',
+                    'Chưa có mã trong watchlist. Hãy thêm mã sau khi kết nối backend.',
                   ),
                 ),
               )
@@ -329,7 +369,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 return Card(
                   child: ListTile(
                     leading: CircleAvatar(
-                      child: Text(symbol.substring(0, 1)),
+                      child: Text(symbol.isEmpty ? '?' : symbol[0]),
                     ),
                     title: Text(symbol),
                     subtitle: Text(
@@ -343,9 +383,12 @@ class _DashboardPageState extends State<DashboardPage> {
             const SizedBox(height: 16),
             Card(
               child: ListTile(
-                leading: const CircleAvatar(child: Icon(Icons.school_outlined)),
+                leading:
+                    const CircleAvatar(child: Icon(Icons.school_outlined)),
                 title: const Text('Hybrid AI Training Room'),
-                subtitle: const Text('Tra cứu tài liệu và bằng chứng trong kho tri thức cục bộ'),
+                subtitle: const Text(
+                  'Tra cứu tài liệu và bằng chứng trong kho tri thức cục bộ',
+                ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: _openTrainingRoom,
               ),
