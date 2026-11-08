@@ -13,6 +13,7 @@ from .routers.training_eval import router as training_eval_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    auth.ensure_bootstrap_secret()
     yield
 
 
