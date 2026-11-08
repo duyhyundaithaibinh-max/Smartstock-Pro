@@ -104,6 +104,10 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
           headers: apiAuthHeaders(widget.apiToken),
         ).timeout(const Duration(seconds: 20)),
       ]);
+      if (responses.any((response) => response.statusCode == 401)) {
+        widget.onSessionExpired?.call(widget.apiToken);
+        throw const ApiRequestException(401);
+      }
       for (final response in responses) {
         _checkResponse(response, expectedStatus: 200);
       }
@@ -298,15 +302,15 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       if (!mounted || file == null) return;
       final fileLength = file.lengthSync() ?? await file.length();
       if (fileLength == null || fileLength <= 0) {
-        throw Exception('Không đọc được kích thước tệp trên thiết bị.');
+        throw const SafeApiException('Không đọc được kích thước tệp trên thiết bị.');
       }
       if (fileLength > 10 * 1024 * 1024) {
-        throw Exception('Tệp vượt quá giới hạn 10 MB.');
+        throw const SafeApiException('Tệp vượt quá giới hạn 10 MB.');
       }
       final bytes = await file.readAsBytes();
       if (!mounted) return;
       if (bytes.isEmpty) {
-        throw Exception('Không đọc được nội dung tệp trên thiết bị.');
+        throw const SafeApiException('Không đọc được nội dung tệp trên thiết bị.');
       }
 
       final request = http.MultipartRequest(
