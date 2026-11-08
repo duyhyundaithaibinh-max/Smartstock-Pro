@@ -285,5 +285,201 @@ class LocalAuthenticationTests(unittest.TestCase):
             self.assertEqual(client.get("/api/v1/symbols").status_code, 200)
 
 
+    def _create_owner_headers(self, client):
+        auth.create_first_owner("owner", "a-long-test-password", self.bootstrap_secret)
+        response = client.post("/api/v1/auth/login", json={
+            "username": "owner", "password": "a-long-test-password"
+        })
+        self.assertEqual(response.status_code, 200)
+        return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+    def test_watchlist_mutations_require_owner_and_reject_invalid_expired_and_revoked_tokens(self):
+        with TestClient(app) as client:
+            owner_headers = self._create_owner_headers(client)
+            created = client.post("/api/v1/symbols", json={
+                "symbol": "FPT", "name": "FPT", "exchange": "HOSE"
+            }, headers=owner_headers)
+            self.assertEqual(created.status_code, 201)
+
+            for headers in ({}, {"Authorization": "Bearer " + "x" * 48}):
+                self.assertEqual(
+                    client.post("/api/v1/watchlist?symbol=FPT", headers=headers).status_code,
+                    401,
+                )
+            added = client.post("/api/v1/watchlist?symbol=FPT", headers=owner_headers)
+            self.assertEqual(added.status_code, 201)
+
+            expired_login = client.post("/api/v1/auth/login", json={
+                "username": "owner", "password": "a-long-test-password"
+            })
+            expired_token = expired_login.json()["access_token"]
+            with db.connection() as conn:
+                conn.execute(
+                    "UPDATE auth_sessions SET expires_at='2000-01-01T00:00:00+00:00' WHERE token_sha256=?",
+                    (hashlib.sha256(expired_token.encode()).hexdigest(),),
+                )
+            self.assertEqual(
+                client.delete("/api/v1/watchlist/FPT",
+                               headers={"Authorization": f"Bearer {expired_token}"}).status_code,
+                401,
+            )
+
+            revoked_login = client.post("/api/v1/auth/login", json={
+                "username": "owner", "password": "a-long-test-password"
+            })
+            revoked_token = revoked_login.json()["access_token"]
+            self.assertEqual(
+                client.post("/api/v1/auth/logout",
+                            headers={"Authorization": f"Bearer {revoked_token}"}).status_code,
+                200,
+            )
+            self.assertEqual(
+                client.put("/api/v1/watchlist/order", json=["FPT"],
+                           headers={"Authorization": f"Bearer {revoked_token}"}).status_code,
+                401,
+            )
+            self.assertEqual(
+                client.delete("/api/v1/watchlist/FPT", headers=owner_headers).status_code,
+                200,
+            )
+
+    def test_knowledge_upload_and_delete_require_owner_bearer(self):
+        with TestClient(app) as client:
+            owner_headers = self._create_owner_headers(client)
+            upload = {"file": ("auth-matrix.md", b"# Auth matrix\\nA source for integration testing.", "text/markdown")}
+            for headers in ({}, {"Authorization": "Bearer " + "x" * 48}):
+                response = client.post("/api/v1/knowledge/documents", files=upload, headers=headers)
+                self.assertEqual(response.status_code, 401)
+
+            response = client.post("/api/v1/knowledge/documents", files=upload, headers=owner_headers)
+            self.assertEqual(response.status_code, 201)
+            document_id = response.json()["id"]
+            for headers in ({}, {"Authorization": "Bearer " + "x" * 48}):
+                self.assertEqual(
+                    client.delete(f"/api/v1/knowledge/documents/{document_id}", headers=headers).status_code,
+                    401,
+                )
+            deleted = client.delete(
+                f"/api/v1/knowledge/documents/{document_id}", headers=owner_headers
+            )
+            self.assertEqual(deleted.status_code, 200)
+
+    def test_training_approve_and_export_require_owner_bearer(self):
+        with TestClient(app) as client:
+            owner_headers = self._create_owner_headers(client)
+            upload = client.post(
+                "/api/v1/knowledge/documents",
+                files={"file": ("training-source.md", b"# Source\\nThis is a real source chunk for approval testing.", "text/markdown")},
+                headers=owner_headers,
+            )
+            self.assertEqual(upload.status_code, 201)
+            citation_id = f"kb:{upload.json()['id']}:0"
+            created = client.post("/api/v1/training/examples", json={
+                "question": "What is the purpose of this source?",
+                "expected_answer": "It is a real source chunk for approval testing.",
+                "topic": "auth-matrix",
+                "citation_ids": [citation_id],
+            }, headers=owner_headers)
+            self.assertEqual(created.status_code, 201)
+            example_id = created.json()["id"]
+
+            for headers in ({}, {"Authorization": "Bearer " + "x" * 48}):
+                self.assertEqual(
+                    client.post(f"/api/v1/training/examples/{example_id}/approve",
+                                headers=headers).status_code,
+                    401,
+                )
+                self.assertEqual(client.get("/api/v1/training/export", headers=headers).status_code, 401)
+
+            approved = client.post(
+                f"/api/v1/training/examples/{example_id}/approve", headers=owner_headers
+            )
+            self.assertEqual(approved.status_code, 200)
+            self.assertEqual(approved.json()["status"], "approved")
+            exported = client.get("/api/v1/training/export", headers=owner_headers)
+            self.assertEqual(exported.status_code, 200)
+            self.assertEqual(exported.json()["count"], 1)
+
+    def test_analysis_rule_create_and_activate_require_owner_bearer(self):
+        with TestClient(app) as client:
+            owner_headers = self._create_owner_headers(client)
+            payload = {
+                "version": "1.1.0",
+                "name": "Auth matrix rule",
+                "description": "Integration test only",
+                "config": {"fibonacci": {"lookback": 100}},
+            }
+            for headers in ({}, {"Authorization": "Bearer " + "x" * 48}):
+                self.assertEqual(
+                    client.post("/api/v1/analysis/rules", json=payload, headers=headers).status_code,
+                    401,
+                )
+            created = client.post("/api/v1/analysis/rules", json=payload, headers=owner_headers)
+            self.assertEqual(created.status_code, 201)
+            self.assertEqual(created.json()["status"], "draft")
+
+            activate_path = "/api/v1/analysis/rules/1.1.0/activate"
+            for headers in ({}, {"Authorization": "Bearer " + "x" * 48}):
+                self.assertEqual(client.post(activate_path, headers=headers).status_code, 401)
+            activated = client.post(activate_path, headers=owner_headers)
+            self.assertEqual(activated.status_code, 200)
+            self.assertEqual(activated.json()["status"], "active")
+
+    def test_legacy_shared_token_remains_accepted_for_representative_write_routes(self):
+        legacy = "legacy-shared-token-" + "l" * 40
+        legacy_headers = {"Authorization": f"Bearer {legacy}"}
+        with patch.dict(os.environ, {"SMARTSTOCK_API_TOKEN": legacy}):
+            with TestClient(app) as client:
+                owner_headers = self._create_owner_headers(client)
+                created = client.post("/api/v1/symbols", json={
+                    "symbol": "VNM", "name": "VNM", "exchange": "HOSE"
+                }, headers=owner_headers)
+                self.assertEqual(created.status_code, 201)
+
+                self.assertEqual(
+                    client.post("/api/v1/watchlist?symbol=VNM", headers=legacy_headers).status_code,
+                    201,
+                )
+                upload = client.post(
+                    "/api/v1/knowledge/documents",
+                    files={"file": ("legacy-source.md", b"# Legacy\\nLegacy token compatibility source.", "text/markdown")},
+                    headers=legacy_headers,
+                )
+                self.assertEqual(upload.status_code, 201)
+                document_id = upload.json()["id"]
+                example = client.post("/api/v1/training/examples", json={
+                    "question": "What does the legacy test source describe?",
+                    "expected_answer": "It describes legacy token compatibility.",
+                    "topic": "legacy-auth",
+                    "citation_ids": [f"kb:{document_id}:0"],
+                }, headers=legacy_headers)
+                self.assertEqual(example.status_code, 201)
+                example_id = example.json()["id"]
+                self.assertEqual(
+                    client.post(f"/api/v1/training/examples/{example_id}/approve",
+                                headers=legacy_headers).status_code,
+                    200,
+                )
+                self.assertEqual(client.get("/api/v1/training/export", headers=legacy_headers).status_code, 200)
+
+                rule = client.post("/api/v1/analysis/rules", json={
+                    "version": "1.2.0",
+                    "name": "Legacy compatibility rule",
+                    "description": "Integration test only",
+                    "config": {"fibonacci": {"lookback": 120}},
+                }, headers=legacy_headers)
+                self.assertEqual(rule.status_code, 201)
+                self.assertEqual(
+                    client.post("/api/v1/analysis/rules/1.2.0/activate",
+                                headers=legacy_headers).status_code,
+                    200,
+                )
+                self.assertEqual(
+                    client.delete(f"/api/v1/knowledge/documents/{document_id}",
+                                  headers=legacy_headers).status_code,
+                    200,
+                )
+
+
 if __name__ == "__main__":
     unittest.main()
