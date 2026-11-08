@@ -79,10 +79,12 @@ class KnowledgeBaseTests(unittest.TestCase):
             with original_connection() as conn:
                 with connection_lock:
                     opened_connections.append(conn)
+                # Both independent SQLite handles must be open before either
+                # ingestion proceeds to BEGIN IMMEDIATE.
+                start_together.wait(timeout=5)
                 yield conn
 
         def ingest(filename):
-            start_together.wait(timeout=5)
             return knowledge_base.ingest_document(filename, raw)
 
         with patch.object(knowledge_base, "connection", tracking_connection):
