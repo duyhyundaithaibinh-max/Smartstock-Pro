@@ -17,6 +17,7 @@ def build_analysis_report(candles, rule_config=None, rule_version="1.0.0", rule_
     fibonacci_rules = rule_config.get("fibonacci", {})
     elliott_rules = rule_config.get("elliott", {})
     volume_rules = rule_config.get("volume_flow", {})
+    indicator_rules = rule_config.get("indicators", {})
 
     trend = price_action.analyze_price_action(
         highs, lows, closes, volumes, timestamps,
@@ -40,19 +41,33 @@ def build_analysis_report(candles, rule_config=None, rule_version="1.0.0", rule_
         highs, lows, closes, volumes, timestamps,
         window=volume_rules.get("window", 20),
     )
-    macd = indicators.macd(closes)
-    rsi = indicators.rsi(closes, 14)
-    ema20 = indicators.ema(closes, 20)
-    ema50 = indicators.ema(closes, 50)
-    atr14 = indicators.atr(highs, lows, closes, 14)
+    ema_fast_period = indicator_rules.get("ema_fast_period", 20)
+    ema_slow_period = indicator_rules.get("ema_slow_period", 50)
+    rsi_period = indicator_rules.get("rsi_period", 14)
+    macd_fast_period = indicator_rules.get("macd_fast_period", 12)
+    macd_slow_period = indicator_rules.get("macd_slow_period", 26)
+    macd_signal_period = indicator_rules.get("macd_signal_period", 9)
+    atr_period = indicator_rules.get("atr_period", 14)
+    macd = indicators.macd(closes, macd_fast_period, macd_slow_period, macd_signal_period)
+    rsi = indicators.rsi(closes, rsi_period)
+    ema_fast = indicators.ema(closes, ema_fast_period)
+    ema_slow = indicators.ema(closes, ema_slow_period)
+    atr_value = indicators.atr(highs, lows, closes, atr_period)
 
     latest_indicators = {
-        "rsi14": round(rsi[-1], 4) if rsi[-1] is not None else None,
+        "rsi": round(rsi[-1], 4) if rsi[-1] is not None else None,
+        "rsi_period": rsi_period,
         "macd": round(macd["macd"][-1], 4) if macd["macd"][-1] is not None else None,
         "macd_signal": round(macd["signal"][-1], 4) if macd["signal"][-1] is not None else None,
-        "ema20": round(ema20[-1], 4) if ema20[-1] is not None else None,
-        "ema50": round(ema50[-1], 4) if ema50[-1] is not None else None,
-        "atr14": round(atr14[-1], 4) if atr14[-1] is not None else None,
+        "ema_fast": round(ema_fast[-1], 4) if ema_fast[-1] is not None else None,
+        "ema_fast_period": ema_fast_period,
+        "ema_slow": round(ema_slow[-1], 4) if ema_slow[-1] is not None else None,
+        "ema_slow_period": ema_slow_period,
+        "macd_fast_period": macd_fast_period,
+        "macd_slow_period": macd_slow_period,
+        "macd_signal_period": macd_signal_period,
+        "atr": round(atr_value[-1], 4) if atr_value[-1] is not None else None,
+        "atr_period": atr_period,
     }
 
     supports = trend.get("price_zones", {}).get("supports", [])
@@ -68,7 +83,7 @@ def build_analysis_report(candles, rule_config=None, rule_version="1.0.0", rule_
     if trend_state == "uptrend":
         bullish_evidence.append("EMA20/EMA50 และ vị trí giá đang nghiêng về xu hướng tăng")
     elif trend_state == "downtrend":
-        bearish_evidence.append("EMA20/EMA50 và vị trí giá đang nghiêng về xu hướng giảm")
+        bearish_evidence.append(f"EMA{ema_fast_period}/EMA{ema_slow_period} và vị trí giá đang nghiêng về xu hướng giảm")
     if breakout_state == "confirmed_bullish":
         bullish_evidence.append("Breakout vượt biên 20 nến có xác nhận volume")
     elif breakout_state == "confirmed_bearish":
