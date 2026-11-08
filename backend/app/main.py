@@ -18,22 +18,25 @@ def api_token_is_valid(authorization: str | None, expected_token: str) -> bool:
         separator
         and scheme.lower() == "bearer"
         and supplied
-        and hmac.compare_digest(supplied, expected_token)
+        and hmac.compare_digest(supplied.encode('utf-8'), expected_token.encode('utf-8'))
     )
 
 
 def validate_security_configuration(environment: str, api_token: str) -> None:
     """Production deployments must not start with an unprotected API."""
-    if environment.strip().lower() == "production" and not api_token:
+    normalized_token = api_token.strip()
+    if environment.strip().lower() == "production" and not normalized_token:
         raise RuntimeError(
             "SMARTSTOCK_API_TOKEN is required when SMARTSTOCK_ENV=production"
         )
+    if normalized_token and len(normalized_token) < 32:
+        raise RuntimeError("SMARTSTOCK_API_TOKEN must contain at least 32 characters")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     environment = os.getenv("SMARTSTOCK_ENV", "development")
-    api_token = os.getenv("SMARTSTOCK_API_TOKEN", "")
+    api_token = os.getenv("SMARTSTOCK_API_TOKEN", "").strip()
     validate_security_configuration(environment, api_token)
     init_db()
     yield
@@ -49,7 +52,7 @@ app = FastAPI(
 
 @app.middleware("http")
 async def protect_api_routes(request: Request, call_next):
-    expected_token = os.getenv("SMARTSTOCK_API_TOKEN", "")
+    expected_token = os.getenv("SMARTSTOCK_API_TOKEN", "").strip()
     if request.url.path.startswith("/api/") and expected_token:
         if not api_token_is_valid(request.headers.get("authorization"), expected_token):
             return JSONResponse(
