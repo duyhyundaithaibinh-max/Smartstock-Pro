@@ -1,6 +1,8 @@
 import hashlib
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier, Lock
 from pathlib import Path
 from unittest.mock import patch
 
@@ -62,6 +64,56 @@ class KnowledgeBaseTests(unittest.TestCase):
         self.assertEqual(duplicate["status"], "duplicate")
         self.assertEqual(first["id"], duplicate["id"])
         self.assertEqual(knowledge_base.list_documents()["total"], 1)
+
+    def test_concurrent_duplicate_ingestion_is_serialized_across_connections(self):
+        from contextlib import contextmanager
+
+        raw = b"Two simultaneous uploads must resolve to one knowledge document"
+        start_together = Barrier(2)
+        connection_lock = Lock()
+        opened_connections = []
+        original_connection = db.connection
+
+        @contextmanager
+        def tracking_connection():
+            with original_connection() as conn:
+                with connection_lock:
+                    opened_connections.append(conn)
+                yield conn
+
+        def ingest(filename):
+            start_together.wait(timeout=5)
+            return knowledge_base.ingest_document(filename, raw)
+
+        with patch.object(knowledge_base, "connection", tracking_connection):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures = [
+                    executor.submit(ingest, "parallel-one.txt"),
+                    executor.submit(ingest, "parallel-two.txt"),
+                ]
+                results = [future.result(timeout=10) for future in futures]
+
+        self.assertEqual(len(opened_connections), 2)
+        self.assertIsNot(opened_connections[0], opened_connections[1])
+        self.assertCountEqual([item["status"] for item in results], ["indexed", "duplicate"])
+        self.assertEqual(results[0]["id"], results[1]["id"])
+        self.assertEqual(db.connection.__name__, original_connection.__name__)
+
+        with db.connection() as conn:
+            document_count = conn.execute(
+                "SELECT COUNT(*) FROM knowledge_documents"
+            ).fetchone()[0]
+            chunk_count = conn.execute(
+                "SELECT COUNT(*) FROM knowledge_chunks"
+            ).fetchone()[0]
+            stored_chunk_count = conn.execute(
+                "SELECT chunk_count FROM knowledge_documents WHERE id=?",
+                (results[0]["id"],),
+            ).fetchone()[0]
+
+        self.assertEqual(document_count, 1)
+        self.assertEqual(chunk_count, stored_chunk_count)
+        self.assertGreater(chunk_count, 0)
 
     def test_duplicate_detection_starts_inside_write_transaction(self):
         from contextlib import contextmanager
