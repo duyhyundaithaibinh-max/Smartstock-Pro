@@ -20,7 +20,7 @@ class TrainingDataError(ValueError):
     """A user-correctable training-data validation error."""
 
 
-class TrainingConflictError(ValueError):
+class TrainingConflictError(TrainingDataError):
     """A state transition or revision conflict."""
 
 
