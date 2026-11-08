@@ -1,0 +1,8 @@
+# Local environment and generated secrets
+.env
+.env.*
+!.env.example
+**/bootstrap.secret
+**/bootstrap.secret.*
+/data/
+/backend/data/
