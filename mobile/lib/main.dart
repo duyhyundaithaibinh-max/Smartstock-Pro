@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import 'api_auth.dart';
 import 'chart_page.dart';
 import 'training_room_page.dart';
 
@@ -38,10 +39,10 @@ class DashboardPage extends StatefulWidget {
   /// Injectable transport and route builders keep auth/session behavior testable.
   /// Production uses the default HTTP client and real feature pages.
   final http.Client? httpClient;
-  final Widget Function(String baseUrl, String symbol, String apiToken)?
-      chartPageBuilder;
-  final Widget Function(String baseUrl, String apiToken)?
-      trainingRoomPageBuilder;
+  final Widget Function(String baseUrl, String symbol, String apiToken,
+      SessionExpiredCallback onSessionExpired)? chartPageBuilder;
+  final Widget Function(String baseUrl, String apiToken,
+      SessionExpiredCallback onSessionExpired)? trainingRoomPageBuilder;
 
   @override
   State<DashboardPage> createState() => _DashboardPageState();
@@ -56,6 +57,7 @@ class _DashboardPageState extends State<DashboardPage> {
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _bootstrapSecretController = TextEditingController();
   String? _accessToken;
+  bool _sessionExpired = false;
   bool _ownerInitialized = true;
   bool _authStatusLoaded = false;
   bool _authLoading = false;
@@ -72,7 +74,32 @@ class _DashboardPageState extends State<DashboardPage> {
   String get _baseUrl =>
       _urlController.text.trim().replaceAll(RegExp(r'/$'), '');
 
-  Map<String, String> get _authHeaders => {if (_accessToken != null) 'Authorization': 'Bearer $_accessToken'};
+  Map<String, String> get _authHeaders => apiAuthHeaders(_accessToken ?? '');
+
+  void _expireSession(String token) {
+    if (!mounted || token.isEmpty || token != _accessToken || _sessionExpired) return;
+    _sessionExpired = true;
+    setState(() {
+      _accessToken = null;
+      _health = null;
+      _watchlist = [];
+      _error = null;
+      _loading = false;
+      _addingSymbol = false;
+    });
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text(
+        'Phiên đăng nhập đã hết hạn hoặc bị thu hồi. Vui lòng đăng nhập lại.',
+      )),
+    );
+  }
+
+  bool _handleProtectedStatus(int statusCode, String token) {
+    if (statusCode != 401) return false;
+    _expireSession(token);
+    return true;
+  }
 
   @override
   void initState() { super.initState(); _loadAuthStatus(); }
@@ -127,7 +154,7 @@ class _DashboardPageState extends State<DashboardPage> {
       final token = payload['access_token']?.toString();
       if (token == null || token.isEmpty) throw Exception('Backend không trả access token hợp lệ.');
       if (!mounted) return;
-      setState(() { _accessToken = token; _ownerInitialized = true; });
+      setState(() { _accessToken = token; _sessionExpired = false; _ownerInitialized = true; });
       _passwordController.clear();
       await _connect();
     } catch (error) {
@@ -145,6 +172,8 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<void> _connect() async {
+    final token = _accessToken;
+    if (token == null || token.isEmpty) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -163,8 +192,9 @@ class _DashboardPageState extends State<DashboardPage> {
             headers: _authHeaders
           )
           .timeout(const Duration(seconds: 8));
+      if (_handleProtectedStatus(watchlistResponse.statusCode, token)) return;
       if (watchlistResponse.statusCode != 200) {
-        throw Exception('Không tải được danh sách theo dõi: HTTP ${watchlistResponse.statusCode}');
+        throw ApiRequestException(watchlistResponse.statusCode);
       }
 
       final health = jsonDecode(healthResponse.body) as Map<String, dynamic>;
@@ -175,13 +205,13 @@ class _DashboardPageState extends State<DashboardPage> {
         _watchlist = payload['items'] as List<dynamic>? ?? [];
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || token != _accessToken) return;
       setState(() {
         _health = null;
-        _error = 'Không kết nối được backend: $error';
+        _error = 'Không kết nối được backend: ${safeApiErrorMessage(error, fallback: 'Đã xảy ra lỗi khi tải dữ liệu.')}';
       });
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && token == _accessToken) setState(() => _loading = false);
     }
   }
 
@@ -195,11 +225,13 @@ class _DashboardPageState extends State<DashboardPage> {
       return;
     }
 
+    final token = _accessToken;
+    if (token == null || token.isEmpty) return;
     setState(() => _addingSymbol = true);
     try {
       final headers = <String, String>{
         'Content-Type': 'application/json',
-        ..._authHeaders
+        ...apiAuthHeaders(token)
       };
       final createResponse = await _httpClient
           .post(
@@ -212,11 +244,10 @@ class _DashboardPageState extends State<DashboardPage> {
             }),
           )
           .timeout(const Duration(seconds: 12));
+      if (_handleProtectedStatus(createResponse.statusCode, token)) return;
       if (createResponse.statusCode != 201 &&
           createResponse.statusCode != 409) {
-        throw Exception(
-          'Không tạo được mã: HTTP ${createResponse.statusCode} ${createResponse.body}',
-        );
+        throw ApiRequestException(createResponse.statusCode);
       }
 
       final watchlistResponse = await _httpClient
@@ -224,14 +255,13 @@ class _DashboardPageState extends State<DashboardPage> {
             Uri.parse('$_baseUrl/api/v1/watchlist').replace(
               queryParameters: {'symbol': symbol},
             ),
-            headers: _authHeaders
+            headers: apiAuthHeaders(token)
           )
           .timeout(const Duration(seconds: 12));
+      if (_handleProtectedStatus(watchlistResponse.statusCode, token)) return;
       if (watchlistResponse.statusCode != 201 &&
           watchlistResponse.statusCode != 409) {
-        throw Exception(
-          'Không thêm được vào watchlist: HTTP ${watchlistResponse.statusCode} ${watchlistResponse.body}',
-        );
+        throw ApiRequestException(watchlistResponse.statusCode);
       }
 
       _symbolController.clear();
@@ -246,13 +276,13 @@ class _DashboardPageState extends State<DashboardPage> {
       );
       await _connect();
     } catch (error) {
-      if (mounted) {
+      if (mounted && token == _accessToken) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Không thêm được mã: $error')),
+          SnackBar(content: Text('Không thêm được mã: ${safeApiErrorMessage(error, fallback: 'Đã xảy ra lỗi khi thêm mã.')}')),
         );
       }
     } finally {
-      if (mounted) setState(() => _addingSymbol = false);
+      if (mounted && token == _accessToken) setState(() => _addingSymbol = false);
     }
   }
 
@@ -260,13 +290,12 @@ class _DashboardPageState extends State<DashboardPage> {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => widget.chartPageBuilder?.call(
-          _baseUrl,
-          symbol,
-          _accessToken ?? '',
+          _baseUrl, symbol, _accessToken ?? '', _expireSession,
         ) ?? ChartPage(
           baseUrl: _baseUrl,
           symbol: symbol,
           apiToken: _accessToken ?? '',
+          onSessionExpired: _expireSession,
         ),
       ),
     );
@@ -276,8 +305,12 @@ class _DashboardPageState extends State<DashboardPage> {
     final token = _accessToken;
     if (token == null) return;
     Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => widget.trainingRoomPageBuilder?.call(_baseUrl, token) ??
-          TrainingRoomPage(baseUrl: _baseUrl, apiToken: token),
+      builder: (_) => widget.trainingRoomPageBuilder?.call(
+            _baseUrl, token, _expireSession) ??
+          TrainingRoomPage(
+            baseUrl: _baseUrl, apiToken: token,
+            onSessionExpired: _expireSession,
+          ),
     ));
   }
 
