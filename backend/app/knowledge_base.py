@@ -157,6 +157,10 @@ def ingest_document(
         raise KnowledgeBaseError("Title must contain 1 to 200 characters.")
 
     with connection() as conn:
+        # Serialize duplicate detection and insertion so concurrent uploads of
+        # identical content return the existing document instead of racing into
+        # the UNIQUE constraint and surfacing an internal-server error.
+        conn.execute("BEGIN IMMEDIATE")
         existing = conn.execute(
             "SELECT id, filename, title, created_at FROM knowledge_documents WHERE content_sha256=?",
             (digest,),
