@@ -1328,7 +1328,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       final events = List<dynamic>.from(eventsPage['items'] as List);
       final quality = qualityPage['items'] as List;
       var total = eventsPage['total'] as int;
-      var offset = eventsPage['offset'] as int;
+      final offset = eventsPage['offset'] as int;
       final limit = eventsPage['limit'] as int;
       var loadingMore = false;
       var historyError = '';
@@ -1354,12 +1354,12 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                     'Trường đã sửa: ${(event['changed_fields'] as List).join(', ')}',
                 ].join('\n')));
             }),
-            if (offset + events.length < total)
+            if (events.length < total)
               Center(child: OutlinedButton(
                 onPressed: loadingMore ? null : () async {
                   refresh(() { loadingMore = true; historyError = ''; });
                   try {
-                    final nextOffset = offset + events.length;
+                    final nextOffset = events.length;
                     final response = await _httpClient.get(
                       _uri('/api/v1/training/examples/$id/review-events',
                         {'limit': '$limit', 'offset': '$nextOffset'}),
@@ -1376,7 +1376,6 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                       refresh(() {
                         events.addAll(page['items'] as List);
                         total = page['total'] as int;
-                        offset = nextOffset;
                       });
                     }
                   } catch (error) {
