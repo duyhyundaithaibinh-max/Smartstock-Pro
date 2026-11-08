@@ -5,15 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
-import 'api_auth.dart';
 
 /// Local knowledge retrieval and document management.
 /// Search results are source passages, not AI-generated answers.
 class TrainingRoomPage extends StatefulWidget {
-  const TrainingRoomPage({super.key, required this.baseUrl, this.apiToken = ''});
+  const TrainingRoomPage({super.key, required this.baseUrl, required this.accessToken});
 
   final String baseUrl;
-  final String apiToken;
+  final String accessToken;
 
   @override
   State<TrainingRoomPage> createState() => _TrainingRoomPageState();
@@ -53,6 +52,8 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
 
   String _categoryLabel(String? value) => _categories[value] ?? 'Khác';
 
+  Map<String, String> get _authHeaders => {'Authorization': 'Bearer ${widget.accessToken}'};
+
   Uri _uri(String path, [Map<String, String>? query]) {
     return Uri.parse('${widget.baseUrl}$path').replace(queryParameters: query);
   }
@@ -61,7 +62,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     try {
       final responses = await Future.wait([
         http.get(_uri('/api/v1/training/examples', {'limit': '100', 'offset': '0'}),
-            headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 20)),
+            headers: _authHeaders).timeout(const Duration(seconds: 20)),
         http.get(_uri('/api/v1/training/evaluation'),
             headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 20)),
       ]);
