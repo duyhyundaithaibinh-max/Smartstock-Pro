@@ -139,14 +139,14 @@ class _DashboardPageState extends State<DashboardPage> {
       _error = null;
     });
     try {
-      final healthResponse = await http
+      final healthResponse = await _httpClient
           .get(Uri.parse('$_baseUrl/health'))
           .timeout(const Duration(seconds: 8));
       if (healthResponse.statusCode != 200) {
         throw Exception('API trả về HTTP ${healthResponse.statusCode}');
       }
 
-      final watchlistResponse = await http
+      final watchlistResponse = await _httpClient
           .get(
             Uri.parse('$_baseUrl/api/v1/watchlist'),
             headers: _authHeaders
@@ -190,7 +190,7 @@ class _DashboardPageState extends State<DashboardPage> {
         'Content-Type': 'application/json',
         ..._authHeaders
       };
-      final createResponse = await http
+      final createResponse = await _httpClient
           .post(
             Uri.parse('$_baseUrl/api/v1/symbols'),
             headers: headers,
@@ -208,7 +208,7 @@ class _DashboardPageState extends State<DashboardPage> {
         );
       }
 
-      final watchlistResponse = await http
+      final watchlistResponse = await _httpClient
           .post(
             Uri.parse('$_baseUrl/api/v1/watchlist').replace(
               queryParameters: {'symbol': symbol},
