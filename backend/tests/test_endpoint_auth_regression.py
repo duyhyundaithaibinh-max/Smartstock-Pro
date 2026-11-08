@@ -120,6 +120,31 @@ class EndpointAuthRegressionTests(unittest.TestCase):
                 401,
             )
 
+    def test_login_rejects_invalid_credentials_without_creating_session(self):
+        with TestClient(app) as client:
+            self._owner_headers(client)
+
+            wrong_password = client.post("/api/v1/auth/login", json={
+                "username": "owner",
+                "password": "a-different-test-password",
+            })
+            self.assertEqual(wrong_password.status_code, 401, wrong_password.text)
+            self.assertNotIn("access_token", wrong_password.json())
+
+            unknown_user = client.post("/api/v1/auth/login", json={
+                "username": "unknown",
+                "password": "a-long-test-password",
+            })
+            self.assertEqual(unknown_user.status_code, 401, unknown_user.text)
+            self.assertNotIn("access_token", unknown_user.json())
+
+            valid_login = client.post("/api/v1/auth/login", json={
+                "username": "owner",
+                "password": "a-long-test-password",
+            })
+            self.assertEqual(valid_login.status_code, 200, valid_login.text)
+            self.assertTrue(valid_login.json().get("access_token"))
+
     def test_logout_rejects_missing_invalid_and_replayed_sessions(self):
         with TestClient(app) as client:
             self.assertEqual(client.post("/api/v1/auth/logout").status_code, 401)
@@ -145,16 +170,13 @@ class EndpointAuthRegressionTests(unittest.TestCase):
                 response = client.get(path)
                 self.assertNotEqual(response.status_code, 401, path)
 
-            # The same path does not become public for non-GET methods.
-            protected_writes = (
-                ("POST", "/api/v1/candles/chart"),
-                ("PUT", "/api/v1/analysis/price-action"),
-                ("DELETE", "/api/v1/analysis/fibonacci"),
-                ("POST", "/api/v1/analysis/report"),
-            )
-            for method, path in protected_writes:
-                response = client.request(method, path)
-                self.assertEqual(response.status_code, 401, f"{method} {path}")
+            # Every write verb remains protected on every public-read path.
+            write_methods = ("POST", "PUT", "PATCH", "DELETE")
+            for path in public_gets:
+                path_only = path.split("?", 1)[0]
+                for method in write_methods:
+                    response = client.request(method, path_only)
+                    self.assertEqual(response.status_code, 401, f"{method} {path_only}")
 
     def test_watchlist_get_requires_owner_or_configured_legacy_token(self):
         with TestClient(app) as client:
@@ -219,6 +241,12 @@ class EndpointAuthRegressionTests(unittest.TestCase):
                 client.post("/api/v1/knowledge/documents", files=upload).status_code,
                 401,
             )
+            invalid_upload = client.post(
+                "/api/v1/knowledge/documents",
+                files=upload,
+                headers=self._invalid_headers(),
+            )
+            self.assertEqual(invalid_upload.status_code, 401, invalid_upload.text)
             created = client.post(
                 "/api/v1/knowledge/documents",
                 files=upload,
@@ -230,6 +258,11 @@ class EndpointAuthRegressionTests(unittest.TestCase):
                 client.delete(f"/api/v1/knowledge/documents/{second_id}").status_code,
                 401,
             )
+            invalid_delete = client.delete(
+                f"/api/v1/knowledge/documents/{second_id}",
+                headers=self._invalid_headers(),
+            )
+            self.assertEqual(invalid_delete.status_code, 401, invalid_delete.text)
             self.assertEqual(
                 client.delete(
                     f"/api/v1/knowledge/documents/{second_id}", headers=owner_headers
@@ -259,6 +292,12 @@ class EndpointAuthRegressionTests(unittest.TestCase):
                 client.post("/api/v1/training/examples", json=payload).status_code,
                 401,
             )
+            invalid_create = client.post(
+                "/api/v1/training/examples",
+                json=payload,
+                headers=self._invalid_headers(),
+            )
+            self.assertEqual(invalid_create.status_code, 401, invalid_create.text)
 
             example_id = self._create_example(client, owner_headers, document_id)
             readiness = client.get("/api/v1/training/evaluation", headers=owner_headers)
