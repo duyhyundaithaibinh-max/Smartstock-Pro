@@ -129,6 +129,9 @@ async def import_csv(
 ):
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(415, "Only CSV files are accepted")
+    source = source.strip()
+    if len(source) < 2:
+        raise HTTPException(422, "Source must contain at least 2 non-whitespace characters")
     raw = await file.read(10_000_001)
     if len(raw) > 10_000_000:
         raise HTTPException(413, "CSV file exceeds 10 MB")
