@@ -1,11 +1,17 @@
 import 'dart:convert';
 
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import 'api_auth.dart';
+
+typedef TrainingFileSaveCallback = Future<Uri?> Function({
+  required String fileName,
+  required Uint8List bytes,
+});
 
 /// Local knowledge retrieval and document management.
 /// Search results are source passages, not AI-generated answers.
@@ -14,12 +20,14 @@ class TrainingRoomPage extends StatefulWidget {
     super.key, required this.baseUrl, this.apiToken = '',
     this.onSessionExpired,
     this.httpClient,
+    this.fileSaveCallback,
   });
 
   final String baseUrl;
   final String apiToken;
   final SessionExpiredCallback? onSessionExpired;
   final http.Client? httpClient;
+  final TrainingFileSaveCallback? fileSaveCallback;
 
   @override
   State<TrainingRoomPage> createState() => _TrainingRoomPageState();
@@ -40,6 +48,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   bool _savingExample = false;
   bool _trainingDataLoading = false;
   bool _exportingTraining = false;
+  final Set<String> _citationLoadingIds = <String>{};
   final Set<int> _trainingActionIds = <int>{};
   final Set<int> _documentActionIds = <int>{};
   int _trainingDataRequestVersion = 0;
@@ -254,26 +263,208 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     }
   }
 
-  Future<void> _copyTrainingExport() async {
-    if (!mounted || _sessionExpired) return;
-    if (_exportingTraining) return;
+  Map<String, dynamic> _parseTrainingExport(String body) {
+    final decoded = jsonDecode(body);
+    if (decoded is! Map<String, dynamic> || decoded['format'] != 'jsonl') {
+      throw const SafeApiException('Định dạng dữ liệu xuất không hợp lệ.');
+    }
+    final count = decoded['count'];
+    final content = decoded['content'];
+    if (count is! int || count < 0 || content is! String) {
+      throw const SafeApiException('Dữ liệu JSONL trả về không đầy đủ.');
+    }
+    final lines = content.isEmpty ? <String>[] : content.split('\n');
+    if (lines.length != count || lines.any((line) => line.trim().isEmpty)) {
+      throw const SafeApiException('Số dòng JSONL không khớp số lượng ví dụ.');
+    }
+    for (final line in lines) {
+      final item = jsonDecode(line);
+      if (item is! Map<String, dynamic>) {
+        throw const SafeApiException('Một dòng JSONL không đúng cấu trúc.');
+      }
+    }
+    return {'count': count, 'content': content};
+  }
+
+  Future<Map<String, dynamic>> _fetchTrainingExport() async {
+    final response = await _httpClient.get(
+      _uri('/api/v1/training/export'),
+      headers: apiAuthHeaders(widget.apiToken),
+    ).timeout(const Duration(seconds: 20));
+    _checkResponse(response, expectedStatus: 200);
+    if (!mounted || _sessionExpired) {
+      throw const SafeApiException('Phiên làm việc không còn hoạt động.');
+    }
+    return _parseTrainingExport(response.body);
+  }
+
+  String _trainingExportFileName() {
+    final now = DateTime.now();
+    String two(int value) => value.toString().padLeft(2, '0');
+    return 'smartstock-training-${now.year}${two(now.month)}${two(now.day)}-'
+        '${two(now.hour)}${two(now.minute)}${two(now.second)}.jsonl';
+  }
+
+  Future<Uri?> _saveTrainingFile(String fileName, Uint8List bytes) {
+    final callback = widget.fileSaveCallback;
+    if (callback != null) {
+      return callback(fileName: fileName, bytes: bytes);
+    }
+    return FilePicker.saveFile(fileName: fileName, bytes: bytes);
+  }
+
+  Future<void> _saveTrainingExport() async {
+    if (!mounted || _sessionExpired || _exportingTraining) return;
     setState(() {
       _exportingTraining = true;
       _error = null;
     });
     try {
-      final response = await _httpClient.get(_uri('/api/v1/training/export'),
-          headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 20));
-      _checkResponse(response, expectedStatus: 200);
+      final payload = await _fetchTrainingExport();
       if (!mounted || _sessionExpired) return;
-      final payload = jsonDecode(response.body) as Map<String, dynamic>;
-      await Clipboard.setData(ClipboardData(text: payload['content']?.toString() ?? ''));
+      final count = payload['count'] as int;
+      if (count == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Chưa có ví dụ đã duyệt hợp lệ để lưu JSONL.')),
+        );
+        return;
+      }
+      final bytes = Uint8List.fromList(utf8.encode(payload['content'] as String));
+      final saved = await _saveTrainingFile(_trainingExportFileName(), bytes);
       if (!mounted || _sessionExpired) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã sao chép ${payload['count'] ?? 0} ví dụ đã duyệt dạng JSONL.')));
+      if (saved == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đã hủy lưu tệp JSONL.')),
+        );
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Đã lưu $count ví dụ JSONL vào tệp đã chọn.')),
+      );
     } catch (error) {
-      if (mounted) setState(() => _error = 'Không xuất được dữ liệu: ${_safeError(error, 'Đã xảy ra lỗi khi xuất dữ liệu.')}');
+      if (mounted && !_sessionExpired) {
+        setState(() => _error = 'Không xuất được dữ liệu: ${_safeError(error, 'Đã xảy ra lỗi khi lưu tệp JSONL.')}');
+      }
     } finally {
       if (mounted) setState(() => _exportingTraining = false);
+    }
+  }
+
+  Future<void> _copyTrainingExport() async {
+    if (!mounted || _sessionExpired || _exportingTraining) return;
+    setState(() {
+      _exportingTraining = true;
+      _error = null;
+    });
+    try {
+      final payload = await _fetchTrainingExport();
+      if (!mounted || _sessionExpired) return;
+      final count = payload['count'] as int;
+      if (count == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Chưa có ví dụ đã duyệt hợp lệ để sao chép.')),
+        );
+        return;
+      }
+      await Clipboard.setData(ClipboardData(text: payload['content'] as String));
+      if (!mounted || _sessionExpired) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Đã sao chép $count ví dụ đã duyệt dạng JSONL.')),
+      );
+    } catch (error) {
+      if (mounted && !_sessionExpired) {
+        setState(() => _error = 'Không xuất được dữ liệu: ${_safeError(error, 'Đã xảy ra lỗi khi sao chép JSONL.')}');
+      }
+    } finally {
+      if (mounted) setState(() => _exportingTraining = false);
+    }
+  }
+
+  Future<void> _openCitationDetail(String citation) async {
+    if (!mounted || _sessionExpired || _citationLoadingIds.contains(citation)) return;
+    final match = RegExp(r'^kb:(\d+):(\d+)$').firstMatch(citation);
+    if (match == null) {
+      setState(() => _error = 'Mã trích dẫn không đúng định dạng.');
+      return;
+    }
+    final documentId = int.tryParse(match.group(1)!);
+    final chunkIndex = int.tryParse(match.group(2)!);
+    if (documentId == null || chunkIndex == null) {
+      setState(() => _error = 'Mã trích dẫn không đúng định dạng.');
+      return;
+    }
+    setState(() {
+      _citationLoadingIds.add(citation);
+      _error = null;
+    });
+    try {
+      final response = await _httpClient.get(
+        _uri('/api/v1/knowledge/citations/$documentId/$chunkIndex'),
+        headers: apiAuthHeaders(widget.apiToken),
+      ).timeout(const Duration(seconds: 20));
+      _checkResponse(response, expectedStatus: 200);
+      if (!mounted || _sessionExpired) return;
+      final payload = jsonDecode(response.body);
+      if (payload is! Map<String, dynamic> ||
+          payload['citation_id'] != citation ||
+          payload['document_id'] != documentId ||
+          payload['chunk_index'] != chunkIndex ||
+          payload['content'] is! String ||
+          (payload['title'] is! String && payload['filename'] is! String) ||
+          (payload['title'] != null && payload['title'] is! String) ||
+          (payload['filename'] != null && payload['filename'] is! String)) {
+        throw const SafeApiException('Dữ liệu đoạn nguồn trả về không hợp lệ.');
+      }
+      // The loading indicator belongs to the fetch, not the open dialog.
+      setState(() => _citationLoadingIds.remove(citation));
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          final title = (payload['title'] as String?)?.trim();
+          final filename = payload['filename']?.toString() ?? 'Tài liệu';
+          final sourceTitle = title == null || title.isEmpty ? filename : title;
+          final charStart = payload['char_start'];
+          final charEnd = payload['char_end'];
+          final locator = charStart is int && charEnd is int
+              ? 'Ký tự $charStart–$charEnd'
+              : 'Chưa có tọa độ ký tự';
+          return AlertDialog(
+            title: const Text('Đoạn nguồn'),
+            content: SizedBox(
+              width: 560,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(sourceTitle, style: Theme.of(dialogContext).textTheme.titleMedium),
+                    const SizedBox(height: 6),
+                    Text('Nguồn: ${payload['source'] ?? '—'} • Nhóm: ${_categoryLabel(payload['category']?.toString())}'),
+                    Text('Citation: $citation'),
+                    Text('Đoạn $chunkIndex • $locator'),
+                    if (payload['content_sha256'] is String)
+                      SelectableText('SHA-256: ${payload['content_sha256']}'),
+                    const Divider(height: 20),
+                    SelectableText(payload['content'] as String),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Đóng'),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (error) {
+      if (mounted && !_sessionExpired) {
+        setState(() => _error = 'Không mở được đoạn nguồn: ${_safeError(error, 'Đã xảy ra lỗi khi tải đoạn nguồn.')}');
+      }
+    } finally {
+      if (mounted) setState(() => _citationLoadingIds.remove(citation));
     }
   }
   Future<void> _loadDocuments() async {
@@ -701,14 +892,20 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                         label: const Text('Cập nhật'),
                       ),
                       OutlinedButton.icon(
-                        onPressed: !_trainingDataLoading && !_exportingTraining &&
-                                (_evaluation!['approved_examples'] as num? ?? 0) > 0
-                            ? _copyTrainingExport
+                        onPressed: !_trainingDataLoading && !_exportingTraining
+                            ? _saveTrainingExport
                             : null,
                         icon: _exportingTraining
                             ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                            : const Icon(Icons.copy),
-                        label: Text(_exportingTraining ? 'Đang xuất...' : 'Sao chép JSONL đã duyệt'),
+                            : const Icon(Icons.save_alt),
+                        label: Text(_exportingTraining ? 'Đang xuất...' : 'Lưu JSONL đã duyệt'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: !_trainingDataLoading && !_exportingTraining
+                            ? _copyTrainingExport
+                            : null,
+                        icon: const Icon(Icons.copy),
+                        label: const Text('Sao chép JSONL'),
                       ),
                     ]),
                   ],
@@ -725,7 +922,27 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                           Row(children: [Expanded(child: Text(item['topic']?.toString() ?? 'general')), Chip(label: Text(approved ? 'Đã duyệt' : 'Chờ duyệt'))]),
                           Text(item['question']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w600)),
                           Text(item['expected_answer']?.toString() ?? ''),
-                          Text('Nguồn: $citations', style: Theme.of(context).textTheme.bodySmall),
+                          Text('Nguồn đã gắn: $citations', style: Theme.of(context).textTheme.bodySmall),
+                          if (item['citation_ids'] is List) ...[
+                            const SizedBox(height: 4),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: (item['citation_ids'] as List<dynamic>)
+                                  .whereType<String>()
+                                  .map((citation) => OutlinedButton.icon(
+                                        key: ValueKey('citation-open-$citation'),
+                                        onPressed: _citationLoadingIds.contains(citation)
+                                            ? null
+                                            : () => _openCitationDetail(citation),
+                                        icon: _citationLoadingIds.contains(citation)
+                                            ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                                            : const Icon(Icons.menu_book_outlined, size: 16),
+                                        label: Text('Xem nguồn $citation'),
+                                      ))
+                                  .toList(),
+                            ),
+                          ],
                           if (id is int) ...[
                             const SizedBox(height: 6),
                             Wrap(spacing: 8, children: [
