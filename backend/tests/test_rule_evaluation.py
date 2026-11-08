@@ -26,7 +26,14 @@ class RuleEvaluationTests(unittest.TestCase):
                 {"version": "1.0.0", "config": {}, "config_sha256": "a" * 64},
                 {
                     "version": "1.1.0",
-                    "config": {"volume_flow": {"window": 12}},
+                    "config": {
+                        "volume_flow": {"window": 12},
+                        "price_action": {
+                            "range_lookback": 30,
+                            "volume_confirmation_pct": 150,
+                            "breakout_buffer_atr_pct": 50,
+                        },
+                    },
                     "config_sha256": "b" * 64,
                 },
             ],
@@ -34,6 +41,11 @@ class RuleEvaluationTests(unittest.TestCase):
         self.assertTrue(result["input"]["same_input_for_all_versions"])
         self.assertEqual(result["versions_compared"], ["1.0.0", "1.1.0"])
         self.assertIn("volume_flow_window", result["differences"])
+        self.assertIn("price_action_parameters", result["differences"])
+        self.assertEqual(
+            result["results"]["1.1.0"]["price_action_parameters"]["range_lookback_bars"],
+            30,
+        )
         self.assertEqual(result["results"]["1.0.0"]["volume_flow_window"], 20)
         self.assertEqual(result["results"]["1.1.0"]["volume_flow_window"], 12)
         self.assertIn("backtest", " ".join(result["limitations"]))
