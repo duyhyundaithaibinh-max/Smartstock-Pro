@@ -67,6 +67,23 @@ class TrainingRoomTests(unittest.TestCase):
 
         self.assertEqual(transaction_states, [True])
 
+    def test_approval_locks_database_before_validating_citations(self):
+        draft = training_room.create_example(self._payload())
+        original = training_room._citation_exists
+        transaction_states = []
+
+        def assert_transaction_started(conn, citation):
+            transaction_states.append(conn.in_transaction)
+            return original(conn, citation)
+
+        with patch.object(
+            training_room, "_citation_exists", side_effect=assert_transaction_started
+        ):
+            approved = training_room.approve_example(draft["id"])
+
+        self.assertEqual(approved["status"], "approved")
+        self.assertEqual(transaction_states, [True])
+
     def test_rejects_nonexistent_source_citation(self):
         payload = self._payload()
         payload["citation_ids"] = ["kb:999:0"]
