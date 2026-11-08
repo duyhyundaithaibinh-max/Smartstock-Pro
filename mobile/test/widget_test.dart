@@ -387,6 +387,11 @@ void main() {
       ),
     ));
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.textContaining('Phiên đăng nhập đã hết hạn'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
 
     expect(expiredCalls, greaterThanOrEqualTo(1));
     expect(find.textContaining('TRAINING-TRACEBACK'), findsNothing);
@@ -414,6 +419,11 @@ void main() {
       ),
     ));
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.textContaining('Dữ liệu gửi lên chưa hợp lệ'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
 
     expect(find.textContaining('SQL-TRACEBACK'), findsNothing);
     expect(find.textContaining('PRIVATE-DETAIL'), findsNothing);
