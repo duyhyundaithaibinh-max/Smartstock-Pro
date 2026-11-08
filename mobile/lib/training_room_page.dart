@@ -30,7 +30,12 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   Map<String, dynamic>? _evaluation;
   bool _savingExample = false;
   bool _trainingDataLoading = false;
+  bool _exportingTraining = false;
   final Set<int> _trainingActionIds = <int>{};
+  final Set<int> _documentActionIds = <int>{};
+  int _trainingDataRequestVersion = 0;
+  int _documentsRequestVersion = 0;
+  int _searchRequestVersion = 0;
   List<dynamic> _documents = [];
   Map<String, dynamic>? _context;
   String? _error;
@@ -60,6 +65,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   }
 
   Future<void> _loadTrainingData() async {
+    final requestVersion = ++_trainingDataRequestVersion;
     if (mounted) {
       setState(() {
         _trainingDataLoading = true;
@@ -81,17 +87,19 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       }
       final examples = jsonDecode(responses[0].body) as Map<String, dynamic>;
       final evaluation = jsonDecode(responses[1].body) as Map<String, dynamic>;
-      if (!mounted) return;
+      if (!mounted || requestVersion != _trainingDataRequestVersion) return;
       setState(() {
         _examples = examples['items'] as List<dynamic>? ?? [];
         _evaluation = evaluation;
       });
     } catch (error) {
-      if (mounted) {
+      if (mounted && requestVersion == _trainingDataRequestVersion) {
         setState(() => _error = 'Không tải được bộ dữ liệu huấn luyện: $error');
       }
     } finally {
-      if (mounted) setState(() => _trainingDataLoading = false);
+      if (mounted && requestVersion == _trainingDataRequestVersion) {
+        setState(() => _trainingDataLoading = false);
+      }
     }
   }
 
@@ -210,6 +218,11 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   }
 
   Future<void> _copyTrainingExport() async {
+    if (_exportingTraining) return;
+    setState(() {
+      _exportingTraining = true;
+      _error = null;
+    });
     try {
       final response = await http.get(_uri('/api/v1/training/export'),
           headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 20));
@@ -220,9 +233,12 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã sao chép ${payload['count'] ?? 0} ví dụ đã duyệt dạng JSONL.')));
     } catch (error) {
       if (mounted) setState(() => _error = 'Không xuất được dữ liệu: $error');
+    } finally {
+      if (mounted) setState(() => _exportingTraining = false);
     }
   }
   Future<void> _loadDocuments() async {
+    final requestVersion = ++_documentsRequestVersion;
     setState(() {
       _documentsLoading = true;
       _error = null;
@@ -237,12 +253,16 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         throw Exception('Backend trả về HTTP ${response.statusCode}');
       }
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
-      if (!mounted) return;
+      if (!mounted || requestVersion != _documentsRequestVersion) return;
       setState(() => _documents = payload['items'] as List<dynamic>? ?? []);
     } catch (error) {
-      if (mounted) setState(() => _error = 'Không tải được danh sách tài liệu: $error');
+      if (mounted && requestVersion == _documentsRequestVersion) {
+        setState(() => _error = 'Không tải được danh sách tài liệu: $error');
+      }
     } finally {
-      if (mounted) setState(() => _documentsLoading = false);
+      if (mounted && requestVersion == _documentsRequestVersion) {
+        setState(() => _documentsLoading = false);
+      }
     }
   }
 
@@ -314,6 +334,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
 
   Future<void> _deleteDocument(Map<String, dynamic> document) async {
     final id = document['id'];
+    if (id is! int || _documentActionIds.contains(id)) return;
     final title = document['title']?.toString() ?? document['filename']?.toString() ?? 'tài liệu';
     final confirmed = await showDialog<bool>(
       context: context,
@@ -332,7 +353,11 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         ],
       ),
     );
-    if (confirmed != true || id is! int) return;
+    if (confirmed != true || !mounted || _documentActionIds.contains(id)) return;
+    setState(() {
+      _documentActionIds.add(id);
+      _error = null;
+    });
     try {
       final response = await http.delete(
         _uri('/api/v1/knowledge/documents/$id'),
@@ -351,13 +376,19 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       );
     } catch (error) {
       if (mounted) setState(() => _error = 'Không xóa được tài liệu: $error');
+    } finally {
+      if (mounted) setState(() => _documentActionIds.remove(id));
     }
   }
 
   Future<void> _search() async {
+    final requestVersion = ++_searchRequestVersion;
     final query = _queryController.text.trim();
     if (query.isEmpty) {
-      setState(() => _error = 'Nhập nội dung cần tìm trong kho tri thức.');
+      setState(() {
+        _loading = false;
+        _error = 'Nhập nội dung cần tìm trong kho tri thức.';
+      });
       return;
     }
     setState(() {
@@ -378,15 +409,19 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         throw Exception('Backend trả về HTTP ${response.statusCode}: ${response.body}');
       }
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
-      if (!mounted) return;
+      if (!mounted || requestVersion != _searchRequestVersion) return;
       setState(() {
         _results = payload['results'] as List<dynamic>? ?? [];
         _context = payload['retrieval_context'] as Map<String, dynamic>?;
       });
     } catch (error) {
-      if (mounted) setState(() => _error = 'Không tìm kiếm được: $error');
+      if (mounted && requestVersion == _searchRequestVersion) {
+        setState(() => _error = 'Không tìm kiếm được: $error');
+      }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && requestVersion == _searchRequestVersion) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -510,9 +545,13 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         ),
         isThreeLine: true,
         trailing: IconButton(
-          tooltip: 'Xóa tài liệu',
-          icon: const Icon(Icons.delete_outline),
-          onPressed: () => _deleteDocument(item),
+          tooltip: _documentActionIds.contains(item['id']) ? 'Đang xóa tài liệu' : 'Xóa tài liệu',
+          icon: _documentActionIds.contains(item['id'])
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.delete_outline),
+          onPressed: item['id'] is int && _documentActionIds.contains(item['id'])
+              ? null
+              : () => _deleteDocument(item),
         ),
       ),
     );
@@ -622,9 +661,14 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                         label: const Text('Cập nhật'),
                       ),
                       OutlinedButton.icon(
-                        onPressed: !_trainingDataLoading && (_evaluation!['approved_examples'] as num? ?? 0) > 0 ? _copyTrainingExport : null,
-                        icon: const Icon(Icons.copy),
-                        label: const Text('Sao chép JSONL đã duyệt'),
+                        onPressed: !_trainingDataLoading && !_exportingTraining &&
+                                (_evaluation!['approved_examples'] as num? ?? 0) > 0
+                            ? _copyTrainingExport
+                            : null,
+                        icon: _exportingTraining
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(Icons.copy),
+                        label: Text(_exportingTraining ? 'Đang xuất...' : 'Sao chép JSONL đã duyệt'),
                       ),
                     ]),
                   ],
