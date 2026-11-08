@@ -244,7 +244,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(eventCalls, 1);
     expect(qualityCalls, 1);
-    expect(find.textContaining('Đã duyệt'), findsOneWidget);
+    expect(find.text('Đã duyệt • revision 1 → 1'), findsOneWidget);
     expect(find.textContaining('Điểm 100/100'), findsOneWidget);
     expect(find.textContaining('Thời gian máy chủ: 2026-11-09T00:00:00'), findsWidgets);
     await tester.tap(find.text('Đóng'));
