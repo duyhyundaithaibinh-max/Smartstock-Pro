@@ -248,6 +248,10 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
 
   Future<void> _pickAndUpload() async {
     if (_uploading) return;
+    setState(() {
+      _uploading = true;
+      _error = null;
+    });
     try {
       final file = await FilePicker.pickFile(
         type: FileType.custom,
@@ -266,10 +270,6 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         throw Exception('Không đọc được nội dung tệp trên thiết bị.');
       }
 
-      setState(() {
-        _uploading = true;
-        _error = null;
-      });
       final request = http.MultipartRequest(
         'POST',
         _uri('/api/v1/knowledge/documents', {
@@ -561,7 +561,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                       icon: _uploading
                           ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.upload_file),
-                      label: Text(_uploading ? 'Đang nhập tài liệu...' : 'Chọn tài liệu từ điện thoại'),
+                      label: Text(_uploading ? 'Đang chọn hoặc nhập tài liệu...' : 'Chọn tài liệu từ điện thoại'),
                     ),
                   ),
                   const SizedBox(height: 8),
