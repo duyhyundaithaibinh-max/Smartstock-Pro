@@ -33,6 +33,7 @@ def _signature(report: dict[str, Any]) -> dict[str, Any]:
         "elliott_status": elliott.get("status", "unknown"),
         "elliott_rule_score": elliott.get("rule_score"),
         "volume_flow_window": flow.get("window", report.get("analysis_rule_parameters", {}).get("volume_flow", {}).get("window", 20)),
+        "indicator_parameters": report.get("indicators", {}),
         "volume_flow_classification": flow.get("classification", flow.get("status", "unknown")),
         "scenario_statuses": {
             item["name"]: item["status"] for item in report.get("scenarios", [])
