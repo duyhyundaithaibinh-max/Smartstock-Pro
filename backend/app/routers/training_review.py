@@ -92,3 +92,22 @@ def get_training_quality_reviews(example_id: int, request: Request):
     if result is None:
         raise HTTPException(404, "Training example not found")
     return {"example_id": example_id, "items": result, "count": len(result)}
+
+
+
+@router.get("/examples/{example_id}/review-events")
+def get_training_review_events(
+    example_id: int,
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """Return chronological append-only approve/reject/edit events for one example."""
+    _reviewer_id(request)
+    try:
+        result = training_room.list_review_events(example_id, limit=limit, offset=offset)
+    except training_room.TrainingDataError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if result is None:
+        raise HTTPException(404, "Training example not found")
+    return result
