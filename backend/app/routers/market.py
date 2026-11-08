@@ -1,5 +1,6 @@
 import csv
 import io
+from typing import Annotated
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Body
 from pydantic import ValidationError
@@ -428,8 +429,8 @@ async def upload_knowledge_document(
 
 @router.get("/knowledge/documents")
 def list_knowledge_documents(
-    limit: int = Query(100, ge=1, le=500),
-    offset: int = Query(0, ge=0),
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ):
     """List indexed knowledge documents without returning their full text."""
     return knowledge_base.list_documents(limit=limit, offset=offset)
@@ -455,7 +456,7 @@ def delete_knowledge_document(document_id: int):
 @router.get("/knowledge/search")
 def search_knowledge_documents(
     q: str = Query(min_length=1, max_length=500),
-    top_k: int = Query(5, ge=1, le=20),
+    top_k: Annotated[int, Query(ge=1, le=20)] = 5,
 ):
     """Retrieve local knowledge chunks with stable source citations."""
     try:
