@@ -18,9 +18,10 @@ http.Response _json(int status, Map<String, dynamic> body) =>
 Future<void> _pumpDashboard(
   WidgetTester tester,
   MockClient client, {
-  Widget Function(String baseUrl, String symbol, String apiToken)?
-      chartBuilder,
-  Widget Function(String baseUrl, String apiToken)? trainingBuilder,
+  Widget Function(String baseUrl, String symbol, String apiToken,
+      void Function(String token) onSessionExpired)? chartBuilder,
+  Widget Function(String baseUrl, String apiToken,
+      void Function(String token) onSessionExpired)? trainingBuilder,
 }) async {
   await tester.pumpWidget(MaterialApp(
     home: DashboardPage(
@@ -273,9 +274,10 @@ void main() {
     await _pumpDashboard(
       tester,
       client,
-      chartBuilder: (baseUrl, symbol, token) =>
+      chartBuilder: (baseUrl, symbol, token, onSessionExpired) =>
           Text('chart-probe:$symbol:$token'),
-      trainingBuilder: (baseUrl, token) => Text('training-probe:$token'),
+      trainingBuilder: (baseUrl, token, onSessionExpired) =>
+          Text('training-probe:$token'),
     );
     await _login(tester);
 
