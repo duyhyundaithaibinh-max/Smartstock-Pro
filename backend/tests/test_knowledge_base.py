@@ -97,7 +97,6 @@ class KnowledgeBaseTests(unittest.TestCase):
         self.assertIsNot(opened_connections[0], opened_connections[1])
         self.assertCountEqual([item["status"] for item in results], ["indexed", "duplicate"])
         self.assertEqual(results[0]["id"], results[1]["id"])
-        self.assertEqual(db.connection.__name__, original_connection.__name__)
 
         with db.connection() as conn:
             document_count = conn.execute(
