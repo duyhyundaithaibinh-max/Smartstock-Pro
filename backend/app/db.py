@@ -101,6 +101,16 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_rule_activation_history_time
             ON analysis_rule_activation_history(activated_at DESC, id DESC);
+        CREATE TRIGGER IF NOT EXISTS trg_rule_activation_history_no_update
+        BEFORE UPDATE ON analysis_rule_activation_history
+        BEGIN
+            SELECT RAISE(ABORT, 'analysis rule activation history is append-only');
+        END;
+        CREATE TRIGGER IF NOT EXISTS trg_rule_activation_history_no_delete
+        BEFORE DELETE ON analysis_rule_activation_history
+        BEGIN
+            SELECT RAISE(ABORT, 'analysis rule activation history is append-only');
+        END;
         CREATE TABLE IF NOT EXISTS watchlist (
             symbol TEXT PRIMARY KEY,
             sort_order INTEGER NOT NULL DEFAULT 0,
