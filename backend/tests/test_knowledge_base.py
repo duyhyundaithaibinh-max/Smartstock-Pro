@@ -63,6 +63,35 @@ class KnowledgeBaseTests(unittest.TestCase):
         self.assertEqual(first["id"], duplicate["id"])
         self.assertEqual(knowledge_base.list_documents()["total"], 1)
 
+    def test_duplicate_detection_starts_inside_write_transaction(self):
+        from contextlib import contextmanager
+
+        raw = b"Concurrent duplicate upload lock test"
+        first = knowledge_base.ingest_document("first.txt", raw)
+        transaction_states = []
+        original_connection = db.connection
+
+        @contextmanager
+        def observing_connection():
+            with original_connection() as conn:
+                class ConnectionProxy:
+                    def __getattr__(self, name):
+                        return getattr(conn, name)
+
+                    def execute(self, sql, parameters=()):
+                        if "SELECT id, filename, title, created_at" in sql:
+                            transaction_states.append(conn.in_transaction)
+                        return conn.execute(sql, parameters)
+
+                yield ConnectionProxy()
+
+        with patch.object(knowledge_base, "connection", observing_connection):
+            duplicate = knowledge_base.ingest_document("second.txt", raw)
+
+        self.assertEqual(duplicate["status"], "duplicate")
+        self.assertEqual(duplicate["id"], first["id"])
+        self.assertEqual(transaction_states, [True])
+
     def test_list_paginates_and_does_not_return_full_text(self):
         for index in range(3):
             knowledge_base.ingest_document(f"doc-{index}.txt", f"content {index}".encode())
