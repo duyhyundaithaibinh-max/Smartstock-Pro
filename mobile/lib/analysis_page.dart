@@ -146,7 +146,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
                       Text('Giá đóng cửa: ${report['latest_close'] ?? '—'}'),
                       Text('Xu hướng: ${trendInfo['classification'] ?? 'Chưa xác định'}'),
                       Text('Breakout: ${breakout['state'] ?? 'Chưa xác định'}'),
-                      Text('RSI 14: ${report['indicators']?['rsi14'] ?? '—'}'),
+                      Text('RSI ${report['indicators']?['rsi_period'] ?? 14}: ${report['indicators']?['rsi'] ?? '—'}'),
                       Text('Ngày dữ liệu: ${report['as_of'] ?? 'Chưa rõ'}'),
                     ],
                   ),
