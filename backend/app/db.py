@@ -97,6 +97,12 @@ def init_db():
             added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(symbol) REFERENCES symbols(symbol) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS auth_bootstrap (
+            id INTEGER PRIMARY KEY CHECK(id = 1),
+            secret_sha256 TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            consumed_at TEXT
+        );
         CREATE TABLE IF NOT EXISTS auth_users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL UNIQUE COLLATE NOCASE,
