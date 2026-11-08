@@ -39,7 +39,12 @@ def build_interpretation_context(report: Mapping[str, Any]) -> dict[str, Any]:
         add(f"data.source.{index}", source, f"data_quality.sources[{index}]")
 
     indicators = report.get("indicators") or {}
-    for key in ("rsi14", "macd", "macd_signal", "ema20", "ema50", "atr14"):
+    for key in (
+        "rsi", "rsi_period", "rsi14", "macd", "macd_signal",
+        "macd_fast_period", "macd_slow_period", "macd_signal_period",
+        "ema_fast", "ema_fast_period", "ema_slow", "ema_slow_period",
+        "ema20", "ema50", "atr", "atr_period", "atr14",
+    ):
         add(f"indicator.{key}", indicators.get(key), f"indicators.{key}")
 
     trend = report.get("trend_and_price_action") or {}
