@@ -34,6 +34,7 @@ class KnowledgeBaseTests(unittest.TestCase):
         raw = ("EMA, RSI, Fibonacci và Elliott. " * 100).encode("utf-8")
         result = knowledge_base.ingest_document("phan-tich.md", raw, source="research-note")
         self.assertEqual(result["status"], "indexed")
+        self.assertEqual(result["category"], "other")
         self.assertEqual(result["content_sha256"], hashlib.sha256(raw).hexdigest())
         self.assertEqual(result["mime_type"], "text/markdown")
         self.assertGreater(result["chunk_count"], 1)
