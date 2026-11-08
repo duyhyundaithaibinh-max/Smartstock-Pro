@@ -42,6 +42,18 @@ def test_offline_evaluation_scores_answer_and_citations(reviewed_example):
     assert result["invalid_citation_count"] == 0
 
 
+def test_token_f1_uses_individual_unicode_words():
+    scores = offline_model_evaluation._f1(
+        "Sóng 3 tăng mạnh",
+        "Sóng 3 giảm mạnh",
+    )
+    assert scores == {
+        "token_precision": 0.75,
+        "token_recall": 0.75,
+        "token_f1": 0.75,
+    }
+
+
 def test_offline_evaluation_flags_missing_and_invalid_citations(reviewed_example):
     result = offline_model_evaluation.evaluate_predictions([{
         "example_id": reviewed_example["id"],
