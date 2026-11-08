@@ -42,7 +42,7 @@ class KnowledgeApiContractTests(unittest.TestCase):
         self.assertEqual(response["retrieval_context"]["status"], "ready")
 
     def test_search_api_returns_explicit_no_evidence_state(self):
-        response = market.search_knowledge_documents("khong co tai lieu nay")
+        response = market.search_knowledge_documents("khong co tai lieu nay", top_k=5)
 
         self.assertEqual(response["total"], 0)
         self.assertEqual(response["results"], [])
@@ -55,19 +55,19 @@ class KnowledgeApiContractTests(unittest.TestCase):
             "elliott.txt", b"Elliott Wave impulse structure and invalidation."
         )
         self.assertGreater(
-            market.search_knowledge_documents("Elliott Wave")["total"], 0
+            market.search_knowledge_documents("Elliott Wave", top_k=5)["total"], 0
         )
 
         result = market.delete_knowledge_document(document["id"])
 
         self.assertEqual(result, {"document_id": document["id"], "status": "deleted"})
-        response = market.search_knowledge_documents("Elliott Wave")
+        response = market.search_knowledge_documents("Elliott Wave", top_k=5)
         self.assertEqual(response["total"], 0)
         self.assertEqual(response["retrieval_context"]["status"], "no_evidence")
 
     def test_document_list_does_not_expose_chunk_text(self):
         knowledge_base.ingest_document("private.txt", b"Local research content")
-        response = market.list_knowledge_documents()
+        response = market.list_knowledge_documents(limit=100, offset=0)
 
         self.assertEqual(response["total"], 1)
         self.assertNotIn("chunks", response["items"][0])
