@@ -647,5 +647,76 @@ class TrainingReviewApiTests(unittest.TestCase):
         check.close()
 
 
+    def test_pr25_event_schema_migration_preserves_existing_events_without_backfill(self):
+        path = Path(self.temp_dir.name) / "pr25-review.db"
+        conn = sqlite3.connect(path)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("CREATE TABLE auth_users(id INTEGER PRIMARY KEY)")
+        conn.execute("INSERT INTO auth_users(id) VALUES(1)")
+        conn.execute("""
+            CREATE TABLE training_examples (
+                id INTEGER PRIMARY KEY,
+                question TEXT NOT NULL,
+                expected_answer TEXT NOT NULL,
+                topic TEXT NOT NULL,
+                citation_ids TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('draft','approved','rejected')),
+                revision INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            INSERT INTO training_examples VALUES
+                (51,'Approved legacy example','Answer body','topic','["kb:1:0"]',
+                 'approved',1,'2026-03-01','2026-03-02')
+        """)
+        conn.execute("""
+            CREATE TABLE training_example_review_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                example_id INTEGER NOT NULL,
+                action TEXT NOT NULL CHECK(action IN ('rejected','edited')),
+                reason TEXT,
+                revision_from INTEGER NOT NULL,
+                revision_to INTEGER NOT NULL,
+                changed_fields TEXT NOT NULL DEFAULT '[]',
+                reviewer_user_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(example_id) REFERENCES training_examples(id) ON DELETE CASCADE,
+                FOREIGN KEY(reviewer_user_id) REFERENCES auth_users(id) ON DELETE RESTRICT
+            )
+        """)
+        conn.execute("""
+            INSERT INTO training_example_review_events
+                (id,example_id,action,reason,revision_from,revision_to,changed_fields,
+                 reviewer_user_id,created_at)
+            VALUES(71,51,'edited',NULL,1,2,'["topic"]',1,'2026-03-03')
+        """)
+        conn.commit()
+        db._migrate_training_review(conn)
+        conn.commit()
+        event = conn.execute(
+            "SELECT * FROM training_example_review_events WHERE id=71"
+        ).fetchone()
+        self.assertEqual(event["action"], "edited")
+        self.assertEqual(event["changed_fields"], '["topic"]')
+        self.assertEqual(event["created_at"], "2026-03-03")
+        self.assertEqual(conn.execute(
+            "SELECT COUNT(*) FROM training_example_review_events WHERE action='approved'"
+        ).fetchone()[0], 0, "migration must not fabricate historical approval events")
+        conn.execute("""
+            INSERT INTO training_example_review_events
+                (example_id,action,reason,revision_from,revision_to,changed_fields,reviewer_user_id)
+            VALUES(51,'approved',NULL,1,1,'[]',1)
+        """)
+        self.assertEqual(conn.execute(
+            "SELECT COUNT(*) FROM training_example_review_events"
+        ).fetchone()[0], 2)
+        conn.commit()
+        self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+        conn.close()
+
+
 if __name__ == "__main__":
     unittest.main()
