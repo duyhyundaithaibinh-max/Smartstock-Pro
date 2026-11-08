@@ -119,7 +119,7 @@ Script nạp 5 tài liệu Markdown và tạo tối đa 15 ví dụ hỏi–đá
 
 ## Training review audit API (SP-022)
 - API contract and request/response examples: [docs/training-review-api.md](docs/training-review-api.md).
-- GET /api/v1/training/examples/{id}/review-events?limit=50&offset=0 returns chronological, paginated approved / rejected / edited events. Reviewer is derived from the owner session; the response exposes only the owner ID and generic Owner label.
+- GET /api/v1/training/examples/{id}/review-events?limit=50&offset=0 returns chronological, paginated approved / rejected / edited events. Reviewer is derived from server context; owner approvals expose the owner ID and generic Owner label. The existing approve route keeps legacy shared-token compatibility and records a null reviewer ID with the Legacy shared token label.
 - Approval status change and audit insert are atomic. Existing approved rows are preserved without fabricated historic events.
 - Manual quality review remains a separate append-only history, allowed on draft/approved/rejected examples, and does not change readiness or prediction-evaluator metrics.
 - DELETE retains hard-delete behavior; dependent audit and quality rows cascade. See the API contract for auth/status codes and pagination details.
