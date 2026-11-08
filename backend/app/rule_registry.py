@@ -77,6 +77,14 @@ def ensure_default_version() -> None:
                VALUES(?,?,?,?,?,'active',CURRENT_TIMESTAMP)""",
             ("1.0.0", "SmartStock baseline", "Built-in baseline rule metadata; existing engine defaults remain authoritative.", config_json, digest),
         )
+        # Backfill the active version once when migrating databases to history tracking.
+        conn.execute(
+            """INSERT INTO analysis_rule_activation_history
+               (version,config_sha256,previous_version)
+               SELECT version,config_sha256,NULL FROM analysis_rule_versions
+               WHERE status='active'
+                 AND NOT EXISTS (SELECT 1 FROM analysis_rule_activation_history)"""
+        )
 
 
 def list_versions(limit: int = 100, offset: int = 0) -> dict[str, Any]:
@@ -152,11 +160,17 @@ def activate_version(version: str) -> dict[str, Any]:
     ensure_default_version()
     with connection() as conn:
         target = conn.execute(
-            "SELECT id,status FROM analysis_rule_versions WHERE version=?", (version,)
+            """SELECT id,version,status,config_sha256
+               FROM analysis_rule_versions WHERE version=?""",
+            (version,),
         ).fetchone()
         if target is None:
             raise KeyError("rule version not found")
         if target["status"] != "active":
+            previous = conn.execute(
+                "SELECT version FROM analysis_rule_versions WHERE status='active'"
+            ).fetchone()
+            previous_version = previous["version"] if previous else None
             conn.execute(
                 "UPDATE analysis_rule_versions SET status='archived' WHERE status='active'"
             )
@@ -165,6 +179,11 @@ def activate_version(version: str) -> dict[str, Any]:
                    SET status='active',activated_at=CURRENT_TIMESTAMP WHERE id=?""",
                 (target["id"],),
             )
+            conn.execute(
+                """INSERT INTO analysis_rule_activation_history
+                   (version,config_sha256,previous_version) VALUES(?,?,?)""",
+                (target["version"], target["config_sha256"], previous_version),
+            )
         row = conn.execute(
             """SELECT id,version,name,description,config_json,config_sha256,
                       status,created_at,activated_at
@@ -172,3 +191,20 @@ def activate_version(version: str) -> dict[str, Any]:
             (target["id"],),
         ).fetchone()
     return _serialize(row)
+
+
+def list_activation_history(limit: int = 100, offset: int = 0) -> dict[str, Any]:
+    if not 1 <= limit <= 500 or offset < 0:
+        raise ValueError("limit must be 1..500 and offset must be non-negative")
+    ensure_default_version()
+    with connection() as conn:
+        rows = conn.execute(
+            """SELECT id,version,config_sha256,previous_version,activated_at
+               FROM analysis_rule_activation_history
+               ORDER BY id DESC LIMIT ? OFFSET ?""",
+            (limit, offset),
+        ).fetchall()
+        total = conn.execute(
+            "SELECT COUNT(*) FROM analysis_rule_activation_history"
+        ).fetchone()[0]
+    return {"total": total, "items": [dict(row) for row in rows]}
