@@ -60,6 +60,18 @@ void main() {
     await _pumpDashboard(tester, newOwnerClient);
     expect(find.byKey(const ValueKey('bootstrap-secret')), findsOneWidget);
     expect(find.text('Khởi tạo chủ sở hữu'), findsOneWidget);
+    expect(
+      tester.widget<TextField>(
+        find.byKey(const ValueKey('bootstrap-secret')),
+      ).obscureText,
+      isTrue,
+    );
+    expect(
+      tester.widget<TextField>(
+        find.byKey(const ValueKey('password')),
+      ).obscureText,
+      isTrue,
+    );
     await tester.pumpWidget(const SizedBox.shrink());
     newOwnerClient.close();
 
