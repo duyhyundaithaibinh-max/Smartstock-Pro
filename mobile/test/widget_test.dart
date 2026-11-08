@@ -8,7 +8,7 @@ import 'package:smartstock_pro/api_auth.dart';
 import 'package:smartstock_pro/main.dart' show DashboardPage, SmartStockApp;
 
 const _token = 'test-session-token';
-const _secret = 'S' * 32;
+const _secret = 'SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS';
 const _password = 'test-password-123';
 
 http.Response _json(int status, Map<String, dynamic> body) =>
@@ -43,14 +43,13 @@ Future<void> _login(
 }
 
 void main() {
-  testWidgets('first launch shows backend connection while status loads',
-      (tester) async {
+  testWidgets('first launch presents the owner login gate', (tester) async {
     final client = MockClient((request) async =>
         _json(200, {'owner_initialized': true}));
-    await tester.pumpWidget(const SmartStockApp());
-    await tester.pump();
+    await _pumpDashboard(tester, client);
     expect(find.text('SmartStock Pro • Đăng nhập'), findsOneWidget);
-    expect(find.text('Kết nối backend'), findsOneWidget);
+    expect(find.text('Đăng nhập chủ sở hữu'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
     client.close();
   });
 
