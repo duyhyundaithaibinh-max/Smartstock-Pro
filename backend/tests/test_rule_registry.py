@@ -64,6 +64,9 @@ class RuleRegistryTests(unittest.TestCase):
     def test_only_supported_parameter_sections_and_ranges_are_accepted(self):
         invalid_configs = [
             {"unknown": {"value": 1}},
+            {"price_action": {"range_lookback": 19}},
+            {"price_action": {"volume_confirmation_pct": 99}},
+            {"price_action": {"breakout_buffer_atr_pct": 201}},
             {"fibonacci": {"wing": 0}},
             {"elliott": {"lookback": 9}},
             {"volume_flow": {"window": 251}},
