@@ -405,6 +405,47 @@ void main() {
     client.close();
   });
 
+  testWidgets('Training Room prioritizes a concurrent 401 over another failed request',
+      (tester) async {
+    var expiredCalls = 0;
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('/training/examples')) {
+        return http.Response('EXAMPLES-INTERNAL-500', 500);
+      }
+      if (request.url.path.endsWith('/training/evaluation')) {
+        return http.Response('EVALUATION-PRIVATE-401', 401);
+      }
+      if (request.url.path.endsWith('/knowledge/documents')) {
+        return _json(200, {'items': []});
+      }
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+    await tester.pumpWidget(MaterialApp(
+      home: TrainingRoomPage(
+        baseUrl: 'http://test',
+        apiToken: _token,
+        httpClient: client,
+        onSessionExpired: (token) {
+          expect(token, _token);
+          expiredCalls++;
+        },
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.textContaining('Phiên đăng nhập đã hết hạn'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    expect(expiredCalls, 1);
+    expect(find.textContaining('EXAMPLES-INTERNAL-500'), findsNothing);
+    expect(find.textContaining('EVALUATION-PRIVATE-401'), findsNothing);
+    expect(find.textContaining('Phiên đăng nhập đã hết hạn'), findsWidgets);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
   testWidgets('Training Room 422 sanitizes HTML and traceback response bodies',
       (tester) async {
     final client = MockClient((request) async => http.Response(
