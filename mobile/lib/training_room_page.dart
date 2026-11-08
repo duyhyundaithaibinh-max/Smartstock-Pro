@@ -257,7 +257,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         const SnackBar(content: Text('Đã từ chối ví dụ. Lý do được lưu trong lịch sử.')));
     } catch (error) {
       if (mounted && !_sessionExpired) setState(() =>
-        _error = 'Không từ chối được ví dụ: \${_safeError(error, 'Đã xảy ra lỗi khi từ chối.')}');
+        _error = 'Không từ chối được ví dụ: ${_safeError(error, 'Đã xảy ra lỗi khi từ chối.')}');
     } finally {
       if (mounted) setState(() => _trainingActionIds.remove(id));
     }
@@ -1218,14 +1218,14 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                 children: [
                   const Text('Bản đang sửa được giữ nguyên. Hãy đối chiếu với dữ liệu mới trước khi tiếp tục.'),
                   const Text('BẢN ĐANG SỬA', style: TextStyle(fontWeight: FontWeight.bold)),
-                  Text('Câu hỏi: \${draft['question']}'), Text('Đáp án: \${draft['expected_answer']}'),
-                  Text('Chủ đề: \${draft['topic']}'), Text('Citation: \${(draft['citation_ids'] as List).join(', ')}'),
+                  Text('Câu hỏi: ${draft['question']}'), Text('Đáp án: ${draft['expected_answer']}'),
+                  Text('Chủ đề: ${draft['topic']}'), Text('Citation: ${(draft['citation_ids'] as List).join(', ')}'),
                   const Divider(),
                   const Text('BẢN TRÊN MÁY CHỦ', style: TextStyle(fontWeight: FontWeight.bold)),
-                  Text('Câu hỏi: \${latest['question']}'), Text('Đáp án: \${latest['expected_answer']}'),
-                  Text('Chủ đề: \${latest['topic']}'),
-                  Text('Citation: \${(latest['citation_ids'] as List? ?? const []).join(', ')}'),
-                  Text('Revision: \${latest['revision']}'),
+                  Text('Câu hỏi: ${latest['question']}'), Text('Đáp án: ${latest['expected_answer']}'),
+                  Text('Chủ đề: ${latest['topic']}'),
+                  Text('Citation: ${(latest['citation_ids'] as List? ?? const []).join(', ')}'),
+                  Text('Revision: ${latest['revision']}'),
                 ]))),
               actions: [
                 TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Đóng')),
@@ -1240,7 +1240,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       }
     } catch (error) {
       if (mounted && !_sessionExpired) setState(() =>
-        _error = 'Không sửa được ví dụ: \${_safeError(error, 'Đã xảy ra lỗi khi sửa ví dụ.')}');
+        _error = 'Không sửa được ví dụ: ${_safeError(error, 'Đã xảy ra lỗi khi sửa ví dụ.')}');
     } finally {
       question.dispose(); answer.dispose(); topic.dispose(); citations.dispose();
       if (mounted) setState(() => _trainingActionIds.remove(id));
@@ -1298,7 +1298,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         const SnackBar(content: Text('Đã lưu đánh giá thủ công. Trạng thái ví dụ không thay đổi.')));
     } catch (error) {
       if (mounted && !_sessionExpired) setState(() =>
-        _error = 'Không lưu được đánh giá: \${_safeError(error, 'Đã xảy ra lỗi khi đánh giá.')}');
+        _error = 'Không lưu được đánh giá: ${_safeError(error, 'Đã xảy ra lỗi khi đánh giá.')}');
     } finally {
       if (mounted) setState(() => _trainingActionIds.remove(id));
     }
@@ -1329,7 +1329,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       await showDialog<void>(context: context, builder: (dialogContext) => AlertDialog(
         title: Text('Lịch sử review • ví dụ #$id'),
         content: SizedBox(width: 620, height: 520, child: ListView(children: [
-          Text('Review events (\${eventsPage['total']})',
+          Text('Review events (${eventsPage['total']})',
             style: Theme.of(context).textTheme.titleMedium),
           if (events.isEmpty) const Text('Chưa có approve/reject/edit event.'),
           ...events.whereType<Map<String, dynamic>>().map((event) {
@@ -1337,35 +1337,35 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
               'approved' => 'Đã duyệt', 'rejected' => 'Đã từ chối',
               'edited' => 'Đã chỉnh sửa', _ => 'Sự kiện review',
             };
-            return ListTile(title: Text('$action • revision \${event['revision_from']} → \${event['revision_to']}'),
+            return ListTile(title: Text('$action • revision ${event['revision_from']} → ${event['revision_to']}'),
               subtitle: Text([
                 if (event['reason'] is String && (event['reason'] as String).isNotEmpty)
-                  'Lý do: \${event['reason']}',
-                'Người thực hiện: \${event['reviewer_label'] ?? '—'}'
-                  '\${event['reviewer_user_id'] == null ? '' : ' (#\${event['reviewer_user_id']})'}',
-                'Thời gian máy chủ: \${event['created_at'] ?? '—'}',
+                  'Lý do: ${event['reason']}',
+                'Người thực hiện: ${event['reviewer_label'] ?? '—'}'
+                  '${event['reviewer_user_id'] == null ? '' : ' (#${event['reviewer_user_id']})'}',
+                'Thời gian máy chủ: ${event['created_at'] ?? '—'}',
                 if (event['changed_fields'] is List && (event['changed_fields'] as List).isNotEmpty)
-                  'Trường đã sửa: \${(event['changed_fields'] as List).join(', ')}',
+                  'Trường đã sửa: ${(event['changed_fields'] as List).join(', ')}',
               ].join('\n')));
           }),
           const Divider(height: 28),
-          Text('Human Quality Review (\${quality.length})',
+          Text('Human Quality Review (${quality.length})',
             style: Theme.of(context).textTheme.titleMedium),
           if (quality.isEmpty) const Text('Chưa có đánh giá chất lượng thủ công.'),
           ...quality.whereType<Map<String, dynamic>>().map((review) => ListTile(
-            title: Text('Điểm \${review['score']}/100 • \${review['rubric_version']}'),
+            title: Text('Điểm ${review['score']}/100 • ${review['rubric_version']}'),
             subtitle: Text([
-              'Revision được đánh giá: \${review['example_revision'] ?? '—'}',
-              'Nhận xét: \${review['rationale'] ?? '—'}',
-              'Reviewer ID: \${review['reviewer_user_id'] ?? '—'}',
-              'Thời gian máy chủ: \${review['reviewed_at'] ?? '—'}',
+              'Revision được đánh giá: ${review['example_revision'] ?? '—'}',
+              'Nhận xét: ${review['rationale'] ?? '—'}',
+              'Reviewer ID: ${review['reviewer_user_id'] ?? '—'}',
+              'Thời gian máy chủ: ${review['reviewed_at'] ?? '—'}',
             ].join('\n')))),
         ])),
         actions: [TextButton(onPressed: () => Navigator.pop(dialogContext),
           child: const Text('Đóng'))]));
     } catch (error) {
       if (mounted && !_sessionExpired) setState(() =>
-        _error = 'Không tải được lịch sử: \${_safeError(error, 'Đã xảy ra lỗi khi tải lịch sử.')}');
+        _error = 'Không tải được lịch sử: ${_safeError(error, 'Đã xảy ra lỗi khi tải lịch sử.')}');
     } finally {
       if (mounted) setState(() => _trainingActionIds.remove(id));
     }
