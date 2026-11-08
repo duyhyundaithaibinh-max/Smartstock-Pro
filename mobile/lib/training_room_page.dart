@@ -102,15 +102,13 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     final topic = _trainingTopicController.text.trim();
     final citations = _trainingCitationsController.text
         .split(',').map((item) => item.trim()).where((item) => item.isNotEmpty).toList();
-    bool isCitationId(String value) {
-      final parts = value.split(':');
-      return parts.length == 3 && parts[0] == 'kb' &&
-          int.tryParse(parts[1]) != null && int.tryParse(parts[2]) != null;
-    }
-    if (question.length < 10 || answer.length < 20 || citations.isEmpty ||
-        citations.length > 10 || citations.any((item) => !isCitationId(item)) ||
+    final citationPattern = RegExp(r'^kb:\d+:\d+$');
+    if (question.length < 10 || question.length > 1000 ||
+        answer.length < 20 || answer.length > 5000 ||
+        topic.length > 80 || citations.isEmpty || citations.length > 10 ||
+        citations.any((item) => !citationPattern.hasMatch(item)) ||
         citations.toSet().length != citations.length) {
-      setState(() => _error = 'Câu hỏi tối thiểu 10 ký tự, đáp án 20 ký tự; cần 1–10 mã nguồn kb:document_id:chunk_index hợp lệ và không trùng.');
+      setState(() => _error = 'Câu hỏi cần 10–1.000 ký tự, đáp án 20–5.000 ký tự, chủ đề tối đa 80 ký tự; cần 1–10 mã nguồn kb:document_id:chunk_index hợp lệ và không trùng.');
       return;
     }
     setState(() { _savingExample = true; _error = null; });
@@ -599,13 +597,13 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                   const SizedBox(height: 6),
                   const Text('Tạo cặp câu hỏi–đáp án chuẩn dựa trên tài liệu đã nạp. Mỗi ví dụ phải gắn mã trích dẫn nguồn; ví dụ mới chờ duyệt và chỉ ví dụ đã duyệt mới được xuất.'),
                   const SizedBox(height: 12),
-                  TextField(controller: _trainingQuestionController, minLines: 2, maxLines: 3, decoration: const InputDecoration(labelText: 'Câu hỏi mẫu', border: OutlineInputBorder())),
+                  TextField(controller: _trainingQuestionController, enabled: !_savingExample, maxLength: 1000, minLines: 2, maxLines: 3, decoration: const InputDecoration(labelText: 'Câu hỏi mẫu', helperText: 'Tối thiểu 10 ký tự', border: OutlineInputBorder())),
                   const SizedBox(height: 8),
-                  TextField(controller: _trainingAnswerController, minLines: 3, maxLines: 5, decoration: const InputDecoration(labelText: 'Đáp án chuẩn đã kiểm chứng', border: OutlineInputBorder())),
+                  TextField(controller: _trainingAnswerController, enabled: !_savingExample, maxLength: 5000, minLines: 3, maxLines: 5, decoration: const InputDecoration(labelText: 'Đáp án chuẩn đã kiểm chứng', helperText: 'Tối thiểu 20 ký tự', border: OutlineInputBorder())),
                   const SizedBox(height: 8),
-                  TextField(controller: _trainingTopicController, decoration: const InputDecoration(labelText: 'Chủ đề', border: OutlineInputBorder())),
+                  TextField(controller: _trainingTopicController, enabled: !_savingExample, maxLength: 80, decoration: const InputDecoration(labelText: 'Chủ đề', border: OutlineInputBorder())),
                   const SizedBox(height: 8),
-                  TextField(controller: _trainingCitationsController, decoration: const InputDecoration(labelText: 'Mã nguồn (kb:document:chunk)', helperText: 'Lấy citation_id từ kết quả tra cứu kho tri thức; phân tách nhiều mã bằng dấu phẩy.', border: OutlineInputBorder())),
+                  TextField(controller: _trainingCitationsController, enabled: !_savingExample, maxLength: 1000, decoration: const InputDecoration(labelText: 'Mã nguồn (kb:document:chunk)', helperText: 'Lấy citation_id từ kết quả tra cứu kho tri thức; phân tách nhiều mã bằng dấu phẩy.', border: OutlineInputBorder())),
                   const SizedBox(height: 10),
                   SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: _savingExample ? null : _saveTrainingExample, icon: const Icon(Icons.playlist_add), label: Text(_savingExample ? 'Đang lưu...' : 'Lưu ví dụ chờ duyệt'))),
                   const Divider(height: 24),
