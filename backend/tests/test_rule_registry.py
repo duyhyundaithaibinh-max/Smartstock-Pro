@@ -85,6 +85,20 @@ class RuleRegistryTests(unittest.TestCase):
             with db.connection() as conn:
                 conn.execute("DELETE FROM analysis_rule_activation_history WHERE id=1")
 
+
+    def test_activation_history_cannot_be_updated_or_deleted_in_sqlite(self):
+        rule_registry.get_active_version()
+        with db.connection() as conn:
+            with self.assertRaisesRegex(Exception, "append-only"):
+                conn.execute(
+                    "UPDATE analysis_rule_activation_history SET version='9.9.9' WHERE id=1"
+                )
+            with self.assertRaisesRegex(Exception, "append-only"):
+                conn.execute(
+                    "DELETE FROM analysis_rule_activation_history WHERE id=1"
+                )
+        self.assertEqual(rule_registry.list_activation_history()["total"], 1)
+
     def test_unknown_version_cannot_be_activated(self):
         with self.assertRaises(KeyError):
             rule_registry.activate_version("9.9.9")
