@@ -4,7 +4,7 @@ on:
     branches: [main]
     paths: ["backend/**", "mobile/**", "docker-compose.yml", ".github/workflows/**"]
   pull_request:
-    branches: [main]
+    branches: ["**"]
     paths: ["backend/**", "mobile/**", "docker-compose.yml", ".github/workflows/**"]
 concurrency:
   group: smartstock-ci-${{ github.event.pull_request.number || github.ref }}
