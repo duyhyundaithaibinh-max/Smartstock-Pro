@@ -100,7 +100,6 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         _uri('/api/v1/knowledge/documents', {
           'source': 'android_upload',
           'title': file.name.replaceFirst(RegExp(r'\.[^.]+
-      );
       request.files.add(http.MultipartFile.fromBytes(
         'file',
         bytes,
@@ -551,7 +550,11 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     });
     try {
       final response = await http.get(
-        _uri('/api/v1/knowledge/search', {'q': query, 'top_k': '8'}),
+        _uri('/api/v1/knowledge/search', {
+          'q': query,
+          'top_k': '8',
+          if (_categoryFilter != 'all') 'category': _categoryFilter,
+        }),
       ).timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
         throw Exception('Backend trả về HTTP ${response.statusCode}: ${response.body}');
@@ -597,7 +600,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
             Text(title == null || title.isEmpty ? filename : title,
                 style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 5),
-            Text('Nguồn: $source • Điểm khớp: ${score is num ? score.toStringAsFixed(3) : '—'}'),
+            Text('Nhóm: ${_categoryLabel(item['category']?.toString())} • Nguồn: $source • Điểm khớp: ${score is num ? score.toStringAsFixed(3) : '—'}'),
             const SizedBox(height: 8),
             SelectableText(text),
             const Divider(height: 18),
@@ -639,7 +642,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         leading: const CircleAvatar(child: Icon(Icons.description_outlined)),
         title: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
         subtitle: Text(
-          '${item['filename'] ?? ''} • $chunks đoạn • ${size is num ? (size / 1024).toStringAsFixed(1) : '—'} KB'
+          '${_categoryLabel(item['category']?.toString())} • ${item['filename'] ?? ''} • $chunks đoạn • ${size is num ? (size / 1024).toStringAsFixed(1) : '—'} KB'
           '${created == null ? '' : '\n$created'}',
         ),
         isThreeLine: true,
@@ -669,6 +672,24 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                   Text('Quản lý tài liệu', style: Theme.of(context).textTheme.titleLarge),
                   const SizedBox(height: 6),
                   const Text('Nhập tài liệu TXT, Markdown, CSV hoặc PDF có văn bản chọn được. Giới hạn 10 MB/tệp; PDF scan cần OCR nên chưa hỗ trợ.'),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: _uploadCategory,
+                    decoration: const InputDecoration(
+                      labelText: 'Phân loại tài liệu nhập vào',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _categories.entries
+                        .where((entry) => entry.key != 'all')
+                        .map((entry) => DropdownMenuItem(
+                              value: entry.key,
+                              child: Text(entry.value),
+                            ))
+                        .toList(),
+                    onChanged: _uploading ? null : (value) {
+                      if (value != null) setState(() => _uploadCategory = value);
+                    },
+                  ),
                   const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
@@ -711,6 +732,28 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Tra cứu kho tri thức', style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    value: _categoryFilter,
+                    decoration: const InputDecoration(
+                      labelText: 'Lọc theo nhóm tài liệu',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _categories.entries
+                        .map((entry) => DropdownMenuItem(
+                              value: entry.key,
+                              child: Text(entry.value),
+                            ))
+                        .toList(),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() => _categoryFilter = value);
+                      _loadDocuments();
+                      if (_searched && _queryController.text.trim().isNotEmpty) {
+                        _search();
+                      }
+                    },
+                  ),
                   const SizedBox(height: 6),
                   const Text('Tìm kiếm cục bộ trong tài liệu đã nhập. Kết quả là đoạn trích có nguồn, chưa phải câu trả lời do AI tổng hợp.'),
                   const SizedBox(height: 12),
