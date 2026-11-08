@@ -132,7 +132,10 @@ void main() {
       if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
       if (request.method == 'PATCH') {
         patchCount++;
-        if (patchCount == 1) return _json(409, {'detail': 'stale'});
+        if (patchCount == 1) {
+          example = {...example, 'revision': 2, 'topic': 'server-topic'};
+          return _json(409, {'detail': 'stale'});
+        }
         expect((jsonDecode(request.body) as Map)['expected_revision'], 2);
         example = {...example, 'topic': 'elliott', 'revision': 3};
         return _json(200, example);
