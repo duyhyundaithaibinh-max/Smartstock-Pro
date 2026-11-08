@@ -18,6 +18,8 @@ def build_analysis_report(candles, rule_config=None, rule_version="1.0.0", rule_
     elliott_rules = rule_config.get("elliott", {})
     volume_rules = rule_config.get("volume_flow", {})
     indicator_rules = rule_config.get("indicators", {})
+    ema_fast_period = indicator_rules.get("ema_fast_period", 20)
+    ema_slow_period = indicator_rules.get("ema_slow_period", 50)
 
     trend = price_action.analyze_price_action(
         highs, lows, closes, volumes, timestamps,
@@ -26,6 +28,8 @@ def build_analysis_report(candles, rule_config=None, rule_version="1.0.0", rule_
         range_lookback=price_action_rules.get("range_lookback", 20),
         volume_confirmation_pct=price_action_rules.get("volume_confirmation_pct", 120),
         breakout_buffer_atr_pct=price_action_rules.get("breakout_buffer_atr_pct", 20),
+        ema_fast_period=ema_fast_period,
+        ema_slow_period=ema_slow_period,
     )
     fib = fibonacci.analyze_fibonacci(
         highs, lows, closes, timestamps,
@@ -41,8 +45,6 @@ def build_analysis_report(candles, rule_config=None, rule_version="1.0.0", rule_
         highs, lows, closes, volumes, timestamps,
         window=volume_rules.get("window", 20),
     )
-    ema_fast_period = indicator_rules.get("ema_fast_period", 20)
-    ema_slow_period = indicator_rules.get("ema_slow_period", 50)
     rsi_period = indicator_rules.get("rsi_period", 14)
     macd_fast_period = indicator_rules.get("macd_fast_period", 12)
     macd_slow_period = indicator_rules.get("macd_slow_period", 26)
