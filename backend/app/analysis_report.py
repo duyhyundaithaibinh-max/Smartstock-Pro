@@ -96,7 +96,10 @@ def build_analysis_report(candles, rule_config=None, rule_version="1.0.0", rule_
             "có xác nhận volume"
         )
     elif breakout_state == "confirmed_bearish":
-        bearish_evidence.append("Breakdown thủng biên 20 nến có xác nhận volume")
+        bearish_evidence.append(
+            f"Breakdown thủng biên {trend.get('breakout', {}).get('range_lookback_bars', 20)} nến "
+            "có xác nhận volume"
+        )
     if flow_state == "accumulation_candidate":
         bullish_evidence.append("CMF và OBV cùng đạt điều kiện ứng viên tích lũy")
     elif flow_state == "distribution_candidate":
