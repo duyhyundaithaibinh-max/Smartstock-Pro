@@ -8,7 +8,7 @@ on:
     paths: ["backend/**", "mobile/**", "docker-compose.yml", ".github/workflows/**"]
 concurrency:
   group: smartstock-ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   backend:
