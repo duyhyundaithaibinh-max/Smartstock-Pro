@@ -26,10 +26,6 @@ def api_token_is_valid(authorization: str | None, expected_token: str) -> bool:
 
 def validate_security_configuration(environment: str, api_token: str) -> None:
     normalized_token = api_token.strip()
-    if environment.strip().lower() == "production" and not normalized_token:
-        raise RuntimeError(
-            "SMARTSTOCK_API_TOKEN is required when SMARTSTOCK_ENV=production"
-        )
     if normalized_token and len(normalized_token) < 32:
         raise RuntimeError("SMARTSTOCK_API_TOKEN must contain at least 32 characters")
 

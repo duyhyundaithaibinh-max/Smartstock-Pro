@@ -12,7 +12,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from app import auth, db
-from app.main import app
+from app.main import app, validate_security_configuration
 
 
 class _CaptureHandler(logging.Handler):
@@ -480,6 +480,95 @@ class LocalAuthenticationTests(unittest.TestCase):
                     200,
                 )
 
+
+
+    def test_security_configuration_allows_optional_legacy_token_in_production(self):
+        validate_security_configuration("production", "")
+        validate_security_configuration("production", "x" * 32)
+        validate_security_configuration("development", "")
+
+    def test_security_configuration_rejects_configured_short_token_in_all_environments(self):
+        for environment in ("development", "production"):
+            with self.subTest(environment=environment):
+                with self.assertRaisesRegex(RuntimeError, "at least 32 characters"):
+                    validate_security_configuration(environment, "short")
+
+    def test_production_without_legacy_token_requires_owner_session_for_writes(self):
+        with patch.dict(os.environ, {
+            "SMARTSTOCK_ENV": "production",
+            "SMARTSTOCK_API_TOKEN": "",
+        }):
+            with TestClient(app) as client:
+                self.assertEqual(client.get("/api/v1/markets").status_code, 200)
+                self.assertEqual(client.get("/api/v1/symbols").status_code, 200)
+                self.assertEqual(client.post("/api/v1/symbols", json={
+                    "symbol": "FPT", "name": "FPT", "exchange": "HOSE"
+                }).status_code, 401)
+                self.assertEqual(client.post("/api/v1/symbols", json={
+                    "symbol": "FPT", "name": "FPT", "exchange": "HOSE"
+                }, headers={"Authorization": "Bearer " + "z" * 48}).status_code, 401)
+
+                setup = client.post("/api/v1/auth/register-first-owner", json={
+                    "username": "owner", "password": "a-long-test-password",
+                    "bootstrap_secret": self.bootstrap_secret,
+                })
+                self.assertEqual(setup.status_code, 201)
+                login = client.post("/api/v1/auth/login", json={
+                    "username": "owner", "password": "a-long-test-password"
+                })
+                self.assertEqual(login.status_code, 200)
+                owner_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+                created = client.post("/api/v1/symbols", json={
+                    "symbol": "FPT", "name": "FPT", "exchange": "HOSE"
+                }, headers=owner_headers)
+                self.assertEqual(created.status_code, 201)
+
+    def test_production_without_legacy_token_rejects_expired_and_revoked_sessions(self):
+        with patch.dict(os.environ, {
+            "SMARTSTOCK_ENV": "production",
+            "SMARTSTOCK_API_TOKEN": "",
+        }):
+            with TestClient(app) as client:
+                owner_headers = self._create_owner_headers(client)
+                expired_login = client.post("/api/v1/auth/login", json={
+                    "username": "owner", "password": "a-long-test-password"
+                })
+                expired_token = expired_login.json()["access_token"]
+                with db.connection() as conn:
+                    conn.execute(
+                        "UPDATE auth_sessions SET expires_at='2000-01-01T00:00:00+00:00' WHERE token_sha256=?",
+                        (hashlib.sha256(expired_token.encode()).hexdigest(),),
+                    )
+                self.assertEqual(client.post("/api/v1/symbols", json={
+                    "symbol": "VNM", "name": "VNM", "exchange": "HOSE"
+                }, headers={"Authorization": f"Bearer {expired_token}"}).status_code, 401)
+
+                revoked_login = client.post("/api/v1/auth/login", json={
+                    "username": "owner", "password": "a-long-test-password"
+                })
+                revoked_token = revoked_login.json()["access_token"]
+                self.assertEqual(client.post("/api/v1/auth/logout", headers={
+                    "Authorization": f"Bearer {revoked_token}"
+                }).status_code, 200)
+                self.assertEqual(client.post("/api/v1/symbols", json={
+                    "symbol": "HPG", "name": "HPG", "exchange": "HOSE"
+                }, headers={"Authorization": f"Bearer {revoked_token}"}).status_code, 401)
+
+    def test_production_with_legacy_token_keeps_owner_and_legacy_access(self):
+        legacy = "production-legacy-token-" + "p" * 40
+        legacy_headers = {"Authorization": f"Bearer {legacy}"}
+        with patch.dict(os.environ, {
+            "SMARTSTOCK_ENV": "production",
+            "SMARTSTOCK_API_TOKEN": legacy,
+        }):
+            with TestClient(app) as client:
+                self.assertEqual(client.post("/api/v1/symbols", json={
+                    "symbol": "VNM", "name": "VNM", "exchange": "HOSE"
+                }, headers=legacy_headers).status_code, 201)
+                owner_headers = self._create_owner_headers(client)
+                self.assertEqual(client.post("/api/v1/symbols", json={
+                    "symbol": "FPT", "name": "FPT", "exchange": "HOSE"
+                }, headers=owner_headers).status_code, 201)
 
 if __name__ == "__main__":
     unittest.main()

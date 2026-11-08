@@ -54,7 +54,7 @@ Nến tuần/tháng chỉ tổng hợp từ các phiên ngày có sẵn; hệ th
 - Nhập secret này tại bước **Khởi tạo chủ sở hữu** trong ứng dụng Android; request gửi trường `bootstrap_secret`.
 - Secret được tiêu thụ nguyên tử cùng transaction tạo owner; request sai/thiếu/đã dùng bị từ chối. Sau khi tạo owner, file plaintext được xóa; nếu cleanup thất bại, cờ consumed trong SQLite vẫn chặn replay. Nếu mất file trước khi tạo owner, khởi động lại backend sẽ tự tạo secret mới và cập nhật hash; nếu owner đã tồn tại thì không cần secret nữa.
 - Chỉ một tài khoản chủ sở hữu được tạo trên mỗi cơ sở dữ liệu.
-- Tương thích ngược: nếu cấu hình `SMARTSTOCK_API_TOKEN`, token chia sẻ cũ vẫn có thể được dùng như phương thức truy cập thay thế cho các API được bảo vệ; tài khoản owner vẫn là cơ chế đăng nhập chính. Khi `SMARTSTOCK_ENV=production`, biến `SMARTSTOCK_API_TOKEN` vẫn bắt buộc theo cấu hình bảo mật hiện tại.
+- Tương thích ngược: `SMARTSTOCK_API_TOKEN` là legacy shared-token fallback **tùy chọn**; owner Bearer session hoạt động độc lập và luôn bảo vệ các API riêng tư. Nếu cấu hình legacy token, giá trị phải dài tối thiểu 32 ký tự ở mọi environment. Client/automation cũ chỉ dùng shared token cần giữ biến này trong cấu hình đến khi đã chuyển sang owner login/session; không xóa token khỏi deployment hiện hữu trước khi xác nhận đã chuyển đổi.
 - Mật khẩu được băm PBKDF2-HMAC-SHA256 với salt ngẫu nhiên; API không lưu mật khẩu gốc.
 - Phiên đăng nhập dùng bearer token ngẫu nhiên, chỉ lưu hash SHA-256 ở backend, hết hạn sau 14 ngày; đăng xuất thu hồi token.
 - Android chỉ giữ token trong bộ nhớ ứng dụng; đóng ứng dụng sẽ cần đăng nhập lại.
