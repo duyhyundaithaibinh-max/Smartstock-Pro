@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -509,7 +510,7 @@ void main() {
         return _json(200, {'status': 'ok', 'version': 'test'});
       }
       if (request.url.path == '/api/v1/watchlist') {
-        throw Exception('NETWORK-INTERNAL-DETAIL-$_token');
+        throw const SocketException('NETWORK-INTERNAL-DETAIL');
       }
       fail('Unexpected request: ${request.method} ${request.url}');
     });
@@ -519,7 +520,7 @@ void main() {
     expect(find.text('SmartStock Pro • Đăng nhập'), findsNothing);
     expect(find.text('Danh sách theo dõi'), findsOneWidget);
     expect(find.textContaining('NETWORK-INTERNAL-DETAIL'), findsNothing);
-    expect(find.textContaining('Không kết nối được máy chủ'), findsOneWidget);
+    expect(find.textContaining('Không thể kết nối máy chủ'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     client.close();
   });
