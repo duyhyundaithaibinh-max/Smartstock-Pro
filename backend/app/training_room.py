@@ -100,6 +100,9 @@ def list_examples(limit: int = 100, offset: int = 0, status: str | None = None) 
 
 def approve_example(example_id: int) -> dict[str, Any] | None:
     with connection() as conn:
+        # Reserve the SQLite write lock before reading the example or its
+        # citations. This serializes approval with concurrent source deletion.
+        conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
             "SELECT * FROM training_examples WHERE id=?", (example_id,)
         ).fetchone()
