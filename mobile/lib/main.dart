@@ -104,8 +104,19 @@ class _DashboardPageState extends State<DashboardPage> {
       if (register) {
         final setup = await _httpClient.post(Uri.parse('$_baseUrl/api/v1/auth/register-first-owner'), headers: {'Content-Type': 'application/json'}, body: jsonEncode({'username': username, 'password': password, 'bootstrap_secret': secret})).timeout(const Duration(seconds: 15));
         if (setup.statusCode != 201) {
-          if (setup.statusCode == 403) throw Exception('Bootstrap secret không đúng hoặc đã được sử dụng.');
-          if (setup.statusCode == 422) throw Exception('Bootstrap secret chưa hợp lệ (32–256 ký tự).');
+          if (setup.statusCode == 403) {
+            throw Exception('Bootstrap secret không đúng hoặc đã được sử dụng.');
+          }
+          if (setup.statusCode == 409) {
+            _bootstrapSecretController.clear();
+            if (mounted) setState(() => _ownerInitialized = true);
+            throw Exception(
+              'Tài khoản chủ sở hữu đã được khởi tạo. Hãy đăng nhập hoặc kiểm tra trạng thái backend.',
+            );
+          }
+          if (setup.statusCode == 422) {
+            throw Exception('Thông tin khởi tạo chưa hợp lệ.');
+          }
           throw Exception('Không khởi tạo được tài khoản (HTTP ${setup.statusCode}).');
         }
         _bootstrapSecretController.clear();
