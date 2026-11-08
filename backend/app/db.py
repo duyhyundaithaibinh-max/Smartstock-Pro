@@ -68,7 +68,8 @@ def _migrate_training_review(conn: sqlite3.Connection) -> None:
     event = conn.execute(
         "SELECT sql FROM sqlite_master WHERE type='table' AND name='training_example_review_events'"
     ).fetchone()
-    if event is None or "'approved'" not in (event["sql"] or ""):
+    event_columns = {row["name"] for row in conn.execute("PRAGMA table_info(training_example_review_events)")}
+    if event is None or "'approved'" not in (event["sql"] or "") or "reviewer_label" not in event_columns:
         old_exists = event is not None
         conn.execute("DROP TRIGGER IF EXISTS trg_training_review_events_no_update")
         conn.execute("DROP TRIGGER IF EXISTS trg_training_review_events_no_delete")
@@ -84,7 +85,8 @@ def _migrate_training_review(conn: sqlite3.Connection) -> None:
                 revision_from INTEGER NOT NULL CHECK(revision_from >= 1),
                 revision_to INTEGER NOT NULL CHECK(revision_to >= revision_from),
                 changed_fields TEXT NOT NULL DEFAULT '[]',
-                reviewer_user_id INTEGER NOT NULL,
+                reviewer_user_id INTEGER,
+                reviewer_label TEXT NOT NULL CHECK(length(trim(reviewer_label)) > 0),
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(example_id) REFERENCES training_examples(id) ON DELETE CASCADE,
                 FOREIGN KEY(reviewer_user_id) REFERENCES auth_users(id) ON DELETE RESTRICT,
@@ -98,9 +100,9 @@ def _migrate_training_review(conn: sqlite3.Connection) -> None:
             conn.execute("""
                 INSERT INTO training_example_review_events
                     (id,example_id,action,reason,revision_from,revision_to,changed_fields,
-                     reviewer_user_id,created_at)
+                     reviewer_user_id,reviewer_label,created_at)
                 SELECT id,example_id,action,reason,revision_from,revision_to,changed_fields,
-                       reviewer_user_id,created_at
+                       reviewer_user_id,'Owner',created_at
                 FROM training_example_review_events_old
             """)
             conn.execute("DROP TABLE training_example_review_events_old")
