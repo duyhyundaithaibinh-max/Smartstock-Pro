@@ -127,6 +127,7 @@ def build_retrieval_context(search_result: dict[str, Any], max_chars: int = 12_0
         excerpt = text[:remaining]
         if not excerpt:
             continue
+        excerpt_start = int(item["char_start"])
         passages.append({
             "citation_id": item["citation_id"],
             "document_id": item["document_id"],
@@ -134,6 +135,8 @@ def build_retrieval_context(search_result: dict[str, Any], max_chars: int = 12_0
             "chunk_index": item["chunk_index"],
             "char_start": item["char_start"],
             "char_end": item["char_end"],
+            "excerpt_char_start": excerpt_start,
+            "excerpt_char_end": excerpt_start + len(excerpt),
             "title": item["title"],
             "filename": item["filename"],
             "source": item["source"],
