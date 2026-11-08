@@ -94,11 +94,62 @@ class _DashboardPageState extends State<DashboardPage> {
   Future<void> _createAndAddSymbol() async {
     final symbol = _symbolController.text.trim().toUpperCase();
     final name = _nameController.text.trim();
-    if (!RegExp(r'^[A-Z0-9.]{3,12}    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => ChartPage(baseUrl: _baseUrl, symbol: symbol, apiToken: _tokenController.text.trim()),
-      ),
-    );
+    if (!RegExp(r'^[A-Z0-9.]{3,12}$').hasMatch(symbol) || name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nhập mã 3–12 ký tự và tên doanh nghiệp.')),
+      );
+      return;
+    }
+
+    setState(() => _addingSymbol = true);
+    try {
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+        ...apiAuthHeaders(_tokenController.text),
+      };
+      final createResponse = await http
+          .post(
+            Uri.parse('$_baseUrl/api/v1/symbols'),
+            headers: headers,
+            body: jsonEncode({
+              'symbol': symbol,
+              'name': name,
+              'exchange': _exchange,
+            }),
+          )
+          .timeout(const Duration(seconds: 12));
+      if (createResponse.statusCode != 201 && createResponse.statusCode != 409) {
+        throw Exception('Không tạo được mã: HTTP ${createResponse.statusCode} ${createResponse.body}');
+      }
+
+      final watchlistResponse = await http
+          .post(
+            Uri.parse('$_baseUrl/api/v1/watchlist').replace(
+              queryParameters: {'symbol': symbol},
+            ),
+            headers: apiAuthHeaders(_tokenController.text),
+          )
+          .timeout(const Duration(seconds: 12));
+      if (watchlistResponse.statusCode != 201 && watchlistResponse.statusCode != 409) {
+        throw Exception('Không thêm được vào watchlist: HTTP ${watchlistResponse.statusCode} ${watchlistResponse.body}');
+      }
+
+      _symbolController.clear();
+      _nameController.clear();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Đã thêm $symbol vào danh sách theo dõi. Hãy nhập OHLCV hợp pháp để xem biểu đồ.')),
+      );
+      await _connect();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Không thêm được mã: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _addingSymbol = false);
+    }
   }
 
   void _openTrainingRoom() {
