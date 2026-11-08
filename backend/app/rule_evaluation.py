@@ -13,6 +13,7 @@ def _signature(report: dict[str, Any]) -> dict[str, Any]:
     fibonacci = report.get("fibonacci", {})
     elliott = report.get("elliott", {})
     flow = report.get("volume_flow", {})
+    indicator_data = report.get("indicators", {})
     return {
         "rule_version": report["analysis_rules_version"],
         "config_sha256": report.get("analysis_rule_config_sha256"),
@@ -37,7 +38,19 @@ def _signature(report: dict[str, Any]) -> dict[str, Any]:
         "elliott_status": elliott.get("status", "unknown"),
         "elliott_rule_score": elliott.get("rule_score"),
         "volume_flow_window": flow.get("window", report.get("analysis_rule_parameters", {}).get("volume_flow", {}).get("window", 20)),
-        "indicator_parameters": report.get("indicators", {}),
+        # Keep configuration separate from the numeric outputs calculated on OHLCV.
+        "indicator_parameters": {
+            key: indicator_data.get(key)
+            for key in (
+                "rsi_period", "ema_fast_period", "ema_slow_period",
+                "macd_fast_period", "macd_slow_period",
+                "macd_signal_period", "atr_period",
+            )
+        },
+        "indicator_values": {
+            key: indicator_data.get(key)
+            for key in ("rsi", "ema_fast", "ema_slow", "macd", "macd_signal", "atr")
+        },
         "volume_flow_classification": flow.get("classification", flow.get("status", "unknown")),
         "scenario_statuses": {
             item["name"]: item["status"] for item in report.get("scenarios", [])
