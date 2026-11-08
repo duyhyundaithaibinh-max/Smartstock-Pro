@@ -1,11 +1,13 @@
 """Deterministic local retrieval for the SmartStock knowledge base.
 
 This is a zero-cost lexical retrieval layer (BM25-style), not a semantic
-embedding model. Retrieved document text is untrusted evidence, never policy.
+embedding model. Vietnamese query matching is accent-insensitive while source
+text and citation offsets remain unchanged. Retrieved text is untrusted evidence.
 """
 from __future__ import annotations
 
 import math
+import unicodedata
 from collections import Counter
 from typing import Any
 
@@ -15,15 +17,25 @@ _K1 = 1.5
 _B = 0.75
 
 
+def _fold_token(token: str) -> str:
+    """Case-fold and remove Unicode combining marks for Vietnamese matching."""
+    decomposed = unicodedata.normalize("NFD", token.casefold())
+    without_marks = "".join(
+        character for character in decomposed
+        if unicodedata.category(character) != "Mn"
+    )
+    return without_marks.replace("đ", "d")
+
+
 def tokenize(text: str) -> list[str]:
-    """Normalize Unicode words while preserving Vietnamese diacritics."""
+    """Return Unicode word tokens with accent-insensitive Vietnamese matching."""
     tokens = []
     current = []
     for character in text:
         if character.isalnum():
             current.append(character)
         elif current:
-            tokens.append("".join(current).casefold())
+            tokens.append(_fold_token("".join(current)))
             current = []
     if current:
         tokens.append("".join(current).casefold())
