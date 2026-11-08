@@ -47,8 +47,12 @@ def read_bootstrap_secret() -> str:
         ) from exc
     if not secret or len(secret) > 256:
         raise AuthError("Bootstrap secret file is invalid; rotate it through the local setup process.")
-    if os.name == "posix" and path.stat().st_mode & 0o077:
-        raise AuthError("Bootstrap secret file permissions are too broad; restrict it to the owner (0600).")
+    if os.name == "posix":
+        try:
+            if path.stat().st_mode & 0o077:
+                raise AuthError("Bootstrap secret file permissions are too broad; restrict it to the owner (0600).")
+        except OSError as exc:
+            raise AuthError("Bootstrap secret file is no longer available.") from exc
     return secret
 
 
