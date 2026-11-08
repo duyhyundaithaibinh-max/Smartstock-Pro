@@ -38,6 +38,24 @@ class AnalysisReportTests(unittest.TestCase):
         self.assertEqual(result["data_quality"]["sources"], ["unit-test"])
         self.assertEqual(result["data_quality"]["price_adjustment"], "unknown")
 
+    def test_bearish_evidence_uses_configured_breakout_range(self):
+        trend = {
+            "trend": {"classification": "downtrend"},
+            "breakout": {
+                "state": "confirmed_bearish",
+                "range_lookback_bars": 35,
+            },
+            "price_zones": {"supports": [], "resistances": []},
+        }
+        with patch(
+            "app.analysis_report.price_action.analyze_price_action",
+            return_value=trend,
+        ):
+            result = build_analysis_report(self.make_candles())
+        bearish = next(item for item in result["scenarios"] if item["name"] == "bearish")
+        self.assertIn("35 nến", bearish["evidence"][0])
+        self.assertNotIn("20 nến", bearish["evidence"][0])
+
     def test_empty_candles_rejected(self):
         with self.assertRaises(ValueError):
             build_analysis_report([])
