@@ -5,12 +5,14 @@ import 'package:http/http.dart' as http;
 
 import 'stock_detail_page.dart';
 import 'analysis_page.dart';
+import 'api_auth.dart';
 
 class ChartPage extends StatefulWidget {
-  const ChartPage({super.key, required this.baseUrl, required this.symbol});
+  const ChartPage({super.key, required this.baseUrl, required this.symbol, this.apiToken = ''});
 
   final String baseUrl;
   final String symbol;
+  final String apiToken;
 
   @override
   State<ChartPage> createState() => _ChartPageState();
@@ -50,7 +52,7 @@ class _ChartPageState extends State<ChartPage> {
         'period': _period,
         'limit': '180',
       });
-      final response = await http.get(uri).timeout(const Duration(seconds: 12));
+      final response = await http.get(uri, headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 12));
       if (response.statusCode != 200) {
         throw Exception('Backend trả về HTTP ${response.statusCode}');
       }
@@ -86,6 +88,7 @@ class _ChartPageState extends State<ChartPage> {
                 builder: (_) => StockDetailPage(
                   baseUrl: widget.baseUrl,
                   symbol: widget.symbol,
+                  apiToken: widget.apiToken,
                 ),
               ),
             ),
