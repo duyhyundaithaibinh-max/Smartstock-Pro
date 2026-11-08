@@ -141,7 +141,11 @@ void main() {
         findsOneWidget);
     expect(find.textContaining('LEAKED-USERNAME'), findsNothing);
     expect(find.textContaining('LEAKED-PASSWORD'), findsNothing);
-    expect(find.textContaining(_secret), findsNothing);
+    final renderedText = tester
+        .widgetList<Text>(find.byType(Text))
+        .map((widget) => widget.data ?? widget.textSpan?.toPlainText() ?? '')
+        .join('\\n');
+    expect(renderedText, isNot(contains(_secret)));
     await tester.pumpWidget(const SizedBox.shrink());
     client.close();
   });
