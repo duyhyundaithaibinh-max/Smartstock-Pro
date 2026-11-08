@@ -249,4 +249,51 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     client.close();
   });
+
+  testWidgets('review events pagination loads the next server page', (tester) async {
+    var pageTwoCalls = 0;
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') {
+        return _json(200, {'items': [_example(status: 'approved')], 'total': 1});
+      }
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.url.path.endsWith('/review-events')) {
+        final offset = request.url.queryParameters['offset'];
+        if (offset == '0') {
+          return _json(200, {'example_id': 12, 'items': [{
+            'id': 1, 'example_id': 12, 'action': 'approved', 'reason': null,
+            'revision_from': 1, 'revision_to': 1, 'changed_fields': [],
+            'reviewer_user_id': 1, 'reviewer_label': 'Owner', 'created_at': 'first-event',
+          }], 'count': 1, 'total': 2, 'limit': 1, 'offset': 0});
+        }
+        pageTwoCalls++;
+        expect(offset, '1');
+        return _json(200, {'example_id': 12, 'items': [{
+          'id': 2, 'example_id': 12, 'action': 'edited', 'reason': null,
+          'revision_from': 1, 'revision_to': 2, 'changed_fields': ['topic'],
+          'reviewer_user_id': 1, 'reviewer_label': 'Owner', 'created_at': 'second-event',
+        }], 'count': 1, 'total': 2, 'limit': 1, 'offset': 1});
+      }
+      if (request.url.path.endsWith('/quality-reviews')) {
+        return _json(200, {'example_id': 12, 'items': [], 'count': 0});
+      }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client);
+    await _visible(tester, 'Lịch sử');
+    await tester.tap(find.text('Lịch sử'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('first-event'), findsOneWidget);
+    await tester.tap(find.text('Tải thêm lịch sử'));
+    await tester.pumpAndSettle();
+    expect(pageTwoCalls, 1);
+    expect(find.textContaining('second-event'), findsOneWidget);
+    expect(find.text('Tải thêm lịch sử'), findsNothing);
+    await tester.tap(find.text('Đóng'));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
 }
