@@ -128,7 +128,7 @@ void main() {
       expect(savedName, endsWith('.jsonl'));
       expect(savedBytes, isNotNull);
       expect(utf8.decode(savedBytes!), contains('Đáp án tiếng Việt'));
-      expect(utf8.decode(savedBytes!).split('\\n'), hasLength(1));
+      expect(utf8.decode(savedBytes!).split('\n'), hasLength(1));
       expect(find.textContaining('Đã lưu 1 ví dụ JSONL'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
       client.close();
