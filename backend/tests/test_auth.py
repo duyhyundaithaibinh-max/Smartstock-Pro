@@ -101,8 +101,11 @@ class LocalAuthenticationTests(unittest.TestCase):
             response = client.get("/api/v1/analysis/rules")
             self.assertEqual(response.status_code, 401)
 
-    def test_market_read_endpoints_remain_public(self):
+    def test_health_and_market_reads_remain_public(self):
         with TestClient(app) as client:
+            health = client.get("/health")
+            self.assertEqual(health.status_code, 200)
+            self.assertEqual(health.json()["status"], "ok")
             self.assertEqual(client.get("/api/v1/markets").status_code, 200)
             self.assertEqual(client.get("/api/v1/symbols").status_code, 200)
 
