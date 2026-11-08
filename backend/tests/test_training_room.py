@@ -45,6 +45,13 @@ class TrainingRoomTests(unittest.TestCase):
         self.assertEqual(item["citation_ids"], [self.citation])
         self.assertEqual(item["topic"], "elliott")
 
+    def test_create_validates_citations_within_insert_transaction(self):
+        with patch.object(training_room, "connection", wraps=training_room.connection) as connection_spy:
+            item = training_room.create_example(self._payload())
+
+        self.assertEqual(item["status"], "draft")
+        self.assertEqual(connection_spy.call_count, 1)
+
     def test_rejects_nonexistent_source_citation(self):
         payload = self._payload()
         payload["citation_ids"] = ["kb:999:0"]
