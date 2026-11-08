@@ -130,6 +130,8 @@ def delete_example(example_id: int) -> bool:
 
 def evaluate_dataset() -> dict[str, Any]:
     with connection() as conn:
+        # Keep example counts and source validation on one consistent snapshot.
+        conn.execute("BEGIN")
         rows = conn.execute("SELECT * FROM training_examples ORDER BY id").fetchall()
         source_count = conn.execute("SELECT COUNT(*) FROM knowledge_documents").fetchone()[0]
         invalid_approved = sum(
@@ -170,6 +172,8 @@ def evaluate_dataset() -> dict[str, Any]:
 
 def export_approved_jsonl() -> dict[str, Any]:
     with connection() as conn:
+        # Export content and citation checks must observe the same DB snapshot.
+        conn.execute("BEGIN")
         rows = conn.execute(
             "SELECT * FROM training_examples WHERE status='approved' ORDER BY id"
         ).fetchall()
