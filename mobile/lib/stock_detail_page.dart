@@ -3,15 +3,19 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import 'api_auth.dart';
+
 class StockDetailPage extends StatefulWidget {
   const StockDetailPage({
     super.key,
     required this.baseUrl,
     required this.symbol,
+    this.apiToken = '',
   });
 
   final String baseUrl;
   final String symbol;
+  final String apiToken;
 
   @override
   State<StockDetailPage> createState() => _StockDetailPageState();
@@ -37,7 +41,7 @@ class _StockDetailPageState extends State<StockDetailPage> {
       final uri = Uri.parse(
         '${widget.baseUrl}/api/v1/symbols/${widget.symbol}/detail',
       ).replace(queryParameters: {'timeframe': '1d', 'limit': '500'});
-      final response = await http.get(uri).timeout(const Duration(seconds: 12));
+      final response = await http.get(uri, headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 12));
       if (response.statusCode != 200) {
         throw Exception('Backend trả về HTTP ${response.statusCode}');
       }
