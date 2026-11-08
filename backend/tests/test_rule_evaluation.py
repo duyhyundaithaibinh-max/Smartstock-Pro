@@ -28,6 +28,7 @@ class RuleEvaluationTests(unittest.TestCase):
                     "version": "1.1.0",
                     "config": {
                         "volume_flow": {"window": 12},
+                        "indicators": {"ema_fast_period": 10, "ema_slow_period": 30},
                         "price_action": {
                             "range_lookback": 30,
                             "volume_confirmation_pct": 150,
@@ -42,6 +43,8 @@ class RuleEvaluationTests(unittest.TestCase):
         self.assertEqual(result["versions_compared"], ["1.0.0", "1.1.0"])
         self.assertIn("volume_flow_window", result["differences"])
         self.assertIn("price_action_parameters", result["differences"])
+        self.assertIn("indicator_parameters", result["differences"])
+        self.assertEqual(result["results"]["1.1.0"]["indicator_parameters"]["ema_fast_period"], 10)
         self.assertEqual(
             result["results"]["1.1.0"]["price_action_parameters"]["range_lookback_bars"],
             30,
