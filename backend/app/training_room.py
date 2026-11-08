@@ -60,6 +60,9 @@ def create_example(payload: dict[str, Any]) -> dict[str, Any]:
     answer = _clean_text(payload.get("expected_answer"), "Expected answer", 20, 5000)
     topic = _clean_text(payload.get("topic", "general"), "Topic", 1, 80)
     with connection() as conn:
+        # Acquire the SQLite write reservation before reading citations so a
+        # concurrent document deletion cannot slip between validation and insert.
+        conn.execute("BEGIN IMMEDIATE")
         citations = _validate_citations(conn, payload.get("citation_ids"))
         cursor = conn.execute(
             """INSERT INTO training_examples
