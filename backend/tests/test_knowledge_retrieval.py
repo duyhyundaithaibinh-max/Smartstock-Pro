@@ -70,6 +70,34 @@ class KnowledgeRetrievalTests(unittest.TestCase):
         self.assertLessEqual(context["characters_used"], 20)
         self.assertIn("untrusted source material", context["policy"])
         self.assertEqual(context["citations"], [result["results"][0]["citation_id"]])
+        passage = context["passages"][0]
+        self.assertEqual(passage["excerpt_char_start"], passage["char_start"])
+        self.assertEqual(
+            passage["excerpt_char_end"] - passage["excerpt_char_start"],
+            len(passage["text"]),
+        )
+        self.assertLessEqual(passage["excerpt_char_end"], passage["char_end"])
+
+    def test_context_excerpt_locator_tracks_nonzero_source_offset(self):
+        item = {
+            "citation_id": "kb:9:2",
+            "document_id": 9,
+            "chunk_id": 22,
+            "chunk_index": 2,
+            "char_start": 2400,
+            "char_end": 2450,
+            "title": "Source",
+            "filename": "source.txt",
+            "source": "user_upload",
+            "content_sha256": "abc",
+            "text": "0123456789",
+        }
+        context = build_retrieval_context({"query": "test", "results": [item]}, max_chars=4)
+        passage = context["passages"][0]
+        self.assertEqual(passage["text"], "0123")
+        self.assertEqual(passage["excerpt_char_start"], 2400)
+        self.assertEqual(passage["excerpt_char_end"], 2404)
+        self.assertEqual(passage["char_end"], 2450)
 
     def test_empty_context_reports_no_evidence(self):
         context = build_retrieval_context({"query": "missing", "results": []})
