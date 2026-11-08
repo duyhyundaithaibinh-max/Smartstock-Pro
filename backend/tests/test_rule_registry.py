@@ -70,6 +70,9 @@ class RuleRegistryTests(unittest.TestCase):
             {"fibonacci": {"wing": 0}},
             {"elliott": {"lookback": 9}},
             {"volume_flow": {"window": 251}},
+            {"indicators": {"ema_fast_period": 100, "ema_slow_period": 50}},
+            {"indicators": {"macd_fast_period": 26, "macd_slow_period": 26}},
+            {"indicators": {"rsi_period": 1}},
             {"volume_flow": {"window": True}},
         ]
         for index, config in enumerate(invalid_configs):
