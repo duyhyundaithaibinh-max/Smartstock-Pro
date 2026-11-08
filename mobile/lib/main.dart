@@ -28,13 +28,28 @@ class SmartStockApp extends StatelessWidget {
 }
 
 class DashboardPage extends StatefulWidget {
-  const DashboardPage({super.key});
+  const DashboardPage({
+    super.key,
+    this.httpClient,
+    this.chartPageBuilder,
+    this.trainingRoomPageBuilder,
+  });
+
+  /// Injectable transport and route builders keep auth/session behavior testable.
+  /// Production uses the default HTTP client and real feature pages.
+  final http.Client? httpClient;
+  final Widget Function(String baseUrl, String symbol, String apiToken)?
+      chartPageBuilder;
+  final Widget Function(String baseUrl, String apiToken)?
+      trainingRoomPageBuilder;
 
   @override
   State<DashboardPage> createState() => _DashboardPageState();
 }
 
 class _DashboardPageState extends State<DashboardPage> {
+  late final http.Client _httpClient = widget.httpClient ?? http.Client();
+  bool get _ownsHttpClient => widget.httpClient == null;
   final TextEditingController _urlController =
       TextEditingController(text: 'http://10.0.2.2:8000');
   final TextEditingController _usernameController = TextEditingController();
@@ -65,7 +80,7 @@ class _DashboardPageState extends State<DashboardPage> {
   Future<void> _loadAuthStatus() async {
     setState(() { _authStatusLoaded = false; _error = null; });
     try {
-      final response = await http.get(Uri.parse('$_baseUrl/api/v1/auth/status')).timeout(const Duration(seconds: 8));
+      final response = await _httpClient.get(Uri.parse('$_baseUrl/api/v1/auth/status')).timeout(const Duration(seconds: 8));
       if (response.statusCode != 200) throw Exception('Backend trả về HTTP ${response.statusCode}');
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
       if (!mounted) return;
@@ -87,7 +102,7 @@ class _DashboardPageState extends State<DashboardPage> {
       if (register && password.length < 12) throw Exception('Mật khẩu cần tối thiểu 12 ký tự.');
       if (register && (secret.length < 32 || secret.length > 256)) throw Exception('Bootstrap secret cần từ 32 đến 256 ký tự.');
       if (register) {
-        final setup = await http.post(Uri.parse('$_baseUrl/api/v1/auth/register-first-owner'), headers: {'Content-Type': 'application/json'}, body: jsonEncode({'username': username, 'password': password, 'bootstrap_secret': secret})).timeout(const Duration(seconds: 15));
+        final setup = await _httpClient.post(Uri.parse('$_baseUrl/api/v1/auth/register-first-owner'), headers: {'Content-Type': 'application/json'}, body: jsonEncode({'username': username, 'password': password, 'bootstrap_secret': secret})).timeout(const Duration(seconds: 15));
         if (setup.statusCode != 201) {
           if (setup.statusCode == 403) throw Exception('Bootstrap secret không đúng hoặc đã được sử dụng.');
           if (setup.statusCode == 422) throw Exception('Bootstrap secret chưa hợp lệ (32–256 ký tự).');
@@ -233,10 +248,14 @@ class _DashboardPageState extends State<DashboardPage> {
   void _openChart(String symbol) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => ChartPage(
+        builder: (_) => widget.chartPageBuilder?.call(
+          _baseUrl,
+          symbol,
+          _accessToken ?? '',
+        ) ?? ChartPage(
           baseUrl: _baseUrl,
           symbol: symbol,
-          apiToken: _accessToken ?? ''
+          apiToken: _accessToken ?? '',
         ),
       ),
     );
@@ -245,7 +264,10 @@ class _DashboardPageState extends State<DashboardPage> {
   void _openTrainingRoom() {
     final token = _accessToken;
     if (token == null) return;
-    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => TrainingRoomPage(baseUrl: _baseUrl, apiToken: token)));
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => widget.trainingRoomPageBuilder?.call(_baseUrl, token) ??
+          TrainingRoomPage(baseUrl: _baseUrl, apiToken: token),
+    ));
   }
 
   @override
@@ -256,6 +278,7 @@ class _DashboardPageState extends State<DashboardPage> {
     _bootstrapSecretController.dispose();
     _symbolController.dispose();
     _nameController.dispose();
+    if (_ownsHttpClient) _httpClient.close();
     super.dispose();
   }
 
@@ -264,12 +287,12 @@ class _DashboardPageState extends State<DashboardPage> {
     return Scaffold(appBar: AppBar(title: const Text('SmartStock Pro • Đăng nhập')), body: ListView(padding: const EdgeInsets.all(20), children: [
       const Icon(Icons.lock_outline, size: 52),
       Text(!_authStatusLoaded ? 'Kết nối backend' : (canRegister ? 'Khởi tạo tài khoản chủ sở hữu' : 'Đăng nhập chủ sở hữu'), style: theme.textTheme.headlineSmall, textAlign: TextAlign.center),
-      TextField(controller: _urlController, decoration: const InputDecoration(labelText: 'Backend URL', border: OutlineInputBorder()), keyboardType: TextInputType.url, onSubmitted: (_) => _loadAuthStatus()),
+      TextField(key: const ValueKey('backend-url'), controller: _urlController, decoration: const InputDecoration(labelText: 'Backend URL', border: OutlineInputBorder()), keyboardType: TextInputType.url, onSubmitted: (_) => _loadAuthStatus()),
       TextButton.icon(onPressed: _authLoading ? null : _loadAuthStatus, icon: const Icon(Icons.refresh), label: const Text('Kiểm tra backend')),
-      TextField(controller: _usernameController, decoration: const InputDecoration(labelText: 'Tên đăng nhập', border: OutlineInputBorder())),
-      if (canRegister) TextField(controller: _bootstrapSecretController, obscureText: true, enableSuggestions: false, autocorrect: false, decoration: const InputDecoration(labelText: 'Bootstrap secret khởi tạo', helperText: 'Lấy trên máy chủ tin cậy bằng lệnh show_bootstrap_secret. Không gửi secret qua chat hoặc log.', border: OutlineInputBorder())),
-      TextField(controller: _passwordController, obscureText: true, decoration: const InputDecoration(labelText: 'Mật khẩu', helperText: 'Tối thiểu 12 ký tự. Phiên chỉ lưu trong bộ nhớ ứng dụng.')),
-      FilledButton(onPressed: (!_authStatusLoaded || _authLoading) ? null : () => _authenticate(register: canRegister), child: Text(_authLoading ? 'Đang xử lý...' : (canRegister ? 'Khởi tạo chủ sở hữu' : 'Đăng nhập'))),
+      TextField(key: const ValueKey('username'), controller: _usernameController, decoration: const InputDecoration(labelText: 'Tên đăng nhập', border: OutlineInputBorder())),
+      if (canRegister) TextField(key: const ValueKey('bootstrap-secret'), controller: _bootstrapSecretController, obscureText: true, enableSuggestions: false, autocorrect: false, decoration: const InputDecoration(labelText: 'Bootstrap secret khởi tạo', helperText: 'Lấy trên máy chủ tin cậy bằng lệnh show_bootstrap_secret. Không gửi secret qua chat hoặc log.', border: OutlineInputBorder())),
+      TextField(key: const ValueKey('password'), controller: _passwordController, obscureText: true, decoration: const InputDecoration(labelText: 'Mật khẩu', helperText: 'Tối thiểu 12 ký tự. Phiên chỉ lưu trong bộ nhớ ứng dụng.')),
+      FilledButton(key: const ValueKey('auth-submit'), onPressed: (!_authStatusLoaded || _authLoading) ? null : () => _authenticate(register: canRegister), child: Text(_authLoading ? 'Đang xử lý...' : (canRegister ? 'Khởi tạo chủ sở hữu' : 'Đăng nhập'))),
       if (_error != null) Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
     ]));
   }
@@ -282,7 +305,7 @@ class _DashboardPageState extends State<DashboardPage> {
       appBar: AppBar(
         title: const Text('SmartStock Pro'),
         backgroundColor: theme.colorScheme.surfaceContainer,
-        actions: [IconButton(tooltip: 'Đăng xuất', onPressed: _logout, icon: const Icon(Icons.logout))],
+        actions: [IconButton(key: const ValueKey('logout'), tooltip: 'Đăng xuất', onPressed: _logout, icon: const Icon(Icons.logout))],
       ),
       body: RefreshIndicator(
         onRefresh: _connect,
