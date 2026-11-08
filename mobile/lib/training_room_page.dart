@@ -415,6 +415,8 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
           (payload['filename'] != null && payload['filename'] is! String)) {
         throw const SafeApiException('Dữ liệu đoạn nguồn trả về không hợp lệ.');
       }
+      // The loading indicator belongs to the fetch, not the open dialog.
+      setState(() => _citationLoadingIds.remove(citation));
       await showDialog<void>(
         context: context,
         builder: (dialogContext) {

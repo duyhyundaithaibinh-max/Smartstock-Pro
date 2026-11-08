@@ -66,7 +66,21 @@ Future<void> _showExport(WidgetTester tester) async {
 
 Future<void> _showCitation(WidgetTester tester, String citation) async {
   final target = find.byKey(ValueKey('citation-open-$citation'));
-  await tester.ensureVisible(target);
+  await tester.scrollUntilVisible(
+    target,
+    250,
+    scrollable: find.byType(ListView).first,
+  );
+  await tester.pumpAndSettle();
+}
+
+Future<void> _showError(WidgetTester tester, String message) async {
+  final target = find.textContaining(message);
+  await tester.scrollUntilVisible(
+    target,
+    250,
+    scrollable: find.byType(ListView).first,
+  );
   await tester.pumpAndSettle();
 }
 
@@ -175,6 +189,7 @@ void main() {
       await tester.tap(find.text('Lưu JSONL đã duyệt'));
       await tester.pumpAndSettle();
 
+      await _showError(tester, 'Không xuất được dữ liệu');
       expect(find.textContaining('PRIVATE-PATH-AND-DETAIL'), findsNothing);
       expect(find.textContaining('Không xuất được dữ liệu'), findsOneWidget);
       expect(find.textContaining('Đã lưu 1 ví dụ JSONL'), findsNothing);
@@ -197,8 +212,9 @@ void main() {
       await tester.tap(find.text('Lưu JSONL đã duyệt'));
       await tester.pumpAndSettle();
 
+      await _showError(tester, 'Số dòng JSONL không khớp');
       expect(saveCalls, 0);
-      expect(find.textContaining('Số dòng JSONL không khớp'), findsOneWidget);
+      expect(find.textContaining('Số dòng JSONL không khớp số lượng ví dụ'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
       client.close();
     });
