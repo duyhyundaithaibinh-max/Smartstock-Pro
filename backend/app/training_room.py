@@ -102,8 +102,11 @@ def list_examples(limit: int = 100, offset: int = 0, status: str | None = None) 
             "items": [_serialize(row) for row in rows]}
 
 
-def approve_example(example_id: int, reviewer_user_id: int) -> dict[str, Any] | None:
-    reviewer_id = _owner_id(reviewer_user_id)
+def approve_example(example_id: int, reviewer_user_id: int | None = None, reviewer_label: str | None = None) -> dict[str, Any] | None:
+    reviewer_id = _owner_id(reviewer_user_id) if reviewer_user_id is not None else None
+    actor_label = reviewer_label or ("Owner" if reviewer_id is not None else "System")
+    if actor_label not in {"Owner", "Legacy shared token", "System"}:
+        raise TrainingDataError("Unsupported reviewer label.")
     with connection() as conn:
         # Reserve the SQLite write lock before reading the example or its
         # citations. This serializes approval with concurrent source deletion.
@@ -125,9 +128,9 @@ def approve_example(example_id: int, reviewer_user_id: int) -> dict[str, Any] | 
         )
         conn.execute("""
             INSERT INTO training_example_review_events
-                (example_id,action,reason,revision_from,revision_to,changed_fields,reviewer_user_id)
-            VALUES(?,'approved',NULL,?,?,'[]',?)
-        """, (example_id, row["revision"], row["revision"], reviewer_id))
+                (example_id,action,reason,revision_from,revision_to,changed_fields,reviewer_user_id,reviewer_label)
+            VALUES(?,'approved',NULL,?,?,'[]',?,?)
+        """, (example_id, row["revision"], row["revision"], reviewer_id, actor_label))
         updated = conn.execute(
             "SELECT * FROM training_examples WHERE id=?", (example_id,)
         ).fetchone()
@@ -235,8 +238,8 @@ def reject_example(example_id: int, reason: Any, reviewer_user_id: int) -> dict[
         )
         conn.execute("""
             INSERT INTO training_example_review_events
-                (example_id,action,reason,revision_from,revision_to,changed_fields,reviewer_user_id)
-            VALUES(?,'rejected',?,?,?,'[]',?)
+                (example_id,action,reason,revision_from,revision_to,changed_fields,reviewer_user_id,reviewer_label)
+            VALUES(?,'rejected',?,?,?,'[]',?,'Owner')
         """, (example_id, clean_reason, row["revision"], row["revision"], reviewer_id))
         updated = conn.execute("SELECT * FROM training_examples WHERE id=?", (example_id,)).fetchone()
     return _serialize(updated)
@@ -286,8 +289,8 @@ def edit_draft_example(example_id: int, payload: dict[str, Any], reviewer_user_i
             raise TrainingConflictError("The example revision changed; reload before editing.")
         conn.execute("""
             INSERT INTO training_example_review_events
-                (example_id,action,reason,revision_from,revision_to,changed_fields,reviewer_user_id)
-            VALUES(?,'edited',NULL,?,?,?,?)
+                (example_id,action,reason,revision_from,revision_to,changed_fields,reviewer_user_id,reviewer_label)
+            VALUES(?,'edited',NULL,?,?,?,?,'Owner')
         """, (example_id, expected_revision, next_revision,
               json.dumps(sorted(changed)), reviewer_id))
         updated = conn.execute("SELECT * FROM training_examples WHERE id=?", (example_id,)).fetchone()
@@ -358,7 +361,6 @@ def list_review_events(example_id: int, limit: int = 50, offset: int = 0) -> dic
         item = dict(row)
         item["changed_fields"] = json.loads(item["changed_fields"])
         # Single-owner MVP: expose a stable role label, not account identifiers or credentials.
-        item["reviewer_label"] = "Owner"
         items.append(item)
     return {"example_id": example_id, "items": items, "count": len(items),
             "total": total, "limit": limit, "offset": offset}
