@@ -71,6 +71,7 @@ def analyze_price_action(
     highs, lows, closes, volumes, timestamps=None,
     lookback=120, wing=2, range_lookback=20,
     volume_confirmation_pct=120, breakout_buffer_atr_pct=20,
+    ema_fast_period=20, ema_slow_period=50,
 ):
     highs, lows, closes, volumes = _validate_series(highs, lows, closes, volumes)
     count = len(closes)
@@ -84,6 +85,12 @@ def analyze_price_action(
         raise ValueError("volume_confirmation_pct must be an integer from 100 to 500")
     if not isinstance(breakout_buffer_atr_pct, int) or not 0 <= breakout_buffer_atr_pct <= 200:
         raise ValueError("breakout_buffer_atr_pct must be an integer from 0 to 200")
+    if not isinstance(ema_fast_period, int) or not 2 <= ema_fast_period <= 100:
+        raise ValueError("ema_fast_period must be an integer from 2 to 100")
+    if not isinstance(ema_slow_period, int) or not 3 <= ema_slow_period <= 300:
+        raise ValueError("ema_slow_period must be an integer from 3 to 300")
+    if ema_fast_period >= ema_slow_period:
+        raise ValueError("ema_fast_period must be smaller than ema_slow_period")
     if timestamps is not None and len(timestamps) != count:
         raise ValueError("timestamps and OHLCV arrays must have equal length")
 
@@ -140,22 +147,22 @@ def analyze_price_action(
     else:
         breakout_state = "inside_range"
 
-    ema20 = ema(closes, 20)
-    ema50 = ema(closes, 50)
+    ema_fast = ema(closes, ema_fast_period)
+    ema_slow = ema(closes, ema_slow_period)
     trend = "sideways"
     trend_reasons = []
-    if ema50[-1] is not None:
-        slope20 = ema20[-1] - ema20[-6] if len(ema20) >= 6 and ema20[-6] is not None else 0.0
-        if ema20[-1] > ema50[-1] and close > ema20[-1] and slope20 > current_atr * 0.05:
+    if ema_slow[-1] is not None:
+        slope_fast = ema_fast[-1] - ema_fast[-6] if len(ema_fast) >= 6 and ema_fast[-6] is not None else 0.0
+        if ema_fast[-1] > ema_slow[-1] and close > ema_fast[-1] and slope_fast > current_atr * 0.05:
             trend = "uptrend"
-            trend_reasons = ["EMA20 nằm trên EMA50", "Giá đóng cửa trên EMA20", "EMA20 có độ dốc dương"]
-        elif ema20[-1] < ema50[-1] and close < ema20[-1] and slope20 < -current_atr * 0.05:
+            trend_reasons = [f"EMA{ema_fast_period} nằm trên EMA{ema_slow_period}", f"Giá đóng cửa trên EMA{ema_fast_period}", f"EMA{ema_fast_period} có độ dốc dương"]
+        elif ema_fast[-1] < ema_slow[-1] and close < ema_fast[-1] and slope_fast < -current_atr * 0.05:
             trend = "downtrend"
-            trend_reasons = ["EMA20 nằm dưới EMA50", "Giá đóng cửa dưới EMA20", "EMA20 có độ dốc âm"]
+            trend_reasons = [f"EMA{ema_fast_period} nằm dưới EMA{ema_slow_period}", f"Giá đóng cửa dưới EMA{ema_fast_period}", f"EMA{ema_fast_period} có độ dốc âm"]
         else:
             trend_reasons = ["Các điều kiện EMA và vị trí giá chưa đồng thuận"]
     else:
-        trend_reasons = ["Chưa đủ 50 nến để đánh giá xu hướng bằng EMA20/EMA50"]
+        trend_reasons = [f"Chưa đủ {ema_slow_period} nến để đánh giá xu hướng bằng EMA{ema_fast_period}/EMA{ema_slow_period}"]
 
     resistance_level = round(prior_high, 4)
     support_level = round(prior_low, 4)
@@ -175,10 +182,14 @@ def analyze_price_action(
         "as_of": timestamps[-1] if timestamps else None,
         "trend": {
             "classification": trend,
-            "ema20": round(ema20[-1], 4) if ema20[-1] is not None else None,
-            "ema50": round(ema50[-1], 4) if ema50[-1] is not None else None,
+            "ema_fast": round(ema_fast[-1], 4) if ema_fast[-1] is not None else None,
+            "ema_fast_period": ema_fast_period,
+            "ema_slow": round(ema_slow[-1], 4) if ema_slow[-1] is not None else None,
+            "ema_slow_period": ema_slow_period,
+            "ema20": round(ema_fast[-1], 4) if ema_fast_period == 20 and ema_fast[-1] is not None else None,
+            "ema50": round(ema_slow[-1], 4) if ema_slow_period == 50 and ema_slow[-1] is not None else None,
             "reasons": trend_reasons,
-            "method": "EMA20/EMA50 alignment, close location and 5-bar EMA20 slope normalized by ATR14",
+            "method": f"EMA{ema_fast_period}/EMA{ema_slow_period} alignment, close location and 5-bar fast EMA slope normalized by ATR14",
         },
         "price_zones": {
             "supports": supports,
