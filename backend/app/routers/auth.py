@@ -13,6 +13,10 @@ class Credentials(BaseModel):
     password: str = Field(min_length=12, max_length=256)
 
 
+class FirstOwnerCredentials(Credentials):
+    bootstrap_secret: str = Field(min_length=32, max_length=256)
+
+
 @router.get("/status")
 def auth_status():
     """Tell the client whether first-owner setup is still available."""
@@ -20,9 +24,13 @@ def auth_status():
 
 
 @router.post("/register-first-owner", status_code=201)
-def register_first_owner(payload: Credentials):
+def register_first_owner(payload: FirstOwnerCredentials):
     try:
-        return auth.create_first_owner(payload.username, payload.password)
+        return auth.create_first_owner(
+            payload.username, payload.password, payload.bootstrap_secret
+        )
+    except auth.BootstrapSecretError as exc:
+        raise HTTPException(403, str(exc)) from exc
     except auth.AuthError as exc:
         raise HTTPException(409 if auth.owner_exists() else 422, str(exc)) from exc
 
