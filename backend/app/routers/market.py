@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Body
 from pydantic import ValidationError
 from ..db import connection
 from ..schemas import SymbolCreate, Candle
-from .. import indicators, price_action, fibonacci, elliott, volume_flow, analysis_report, watchlist, chart_data, stock_detail, knowledge_base, knowledge_retrieval, rule_registry, rule_evaluation
+from .. import indicators, price_action, fibonacci, elliott, volume_flow, analysis_report, watchlist, chart_data, stock_detail, knowledge_base, knowledge_retrieval, rule_registry, rule_evaluation, training_room
 
 router = APIRouter(prefix="/api/v1", tags=["market"])
 EXCHANGES = [
@@ -483,6 +483,53 @@ def search_knowledge_documents(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
+
+@router.get("/training/examples")
+def list_training_examples(
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    status: Annotated[str | None, Query(pattern="^(draft|approved)$")] = None,
+):
+    """List supervised examples prepared for human review."""
+    try:
+        return training_room.list_examples(limit=limit, offset=offset, status=status)
+    except training_room.TrainingDataError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+@router.post("/training/examples", status_code=201)
+def create_training_example(payload: dict = Body(...)):
+    """Create a draft example with citations to existing knowledge chunks."""
+    try:
+        return training_room.create_example(payload)
+    except training_room.TrainingDataError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+@router.post("/training/examples/{example_id}/approve")
+def approve_training_example(example_id: int):
+    """Human-approve an example only while all cited source chunks still exist."""
+    try:
+        result = training_room.approve_example(example_id)
+    except training_room.TrainingDataError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if result is None:
+        raise HTTPException(404, "Training example not found")
+    return result
+
+@router.delete("/training/examples/{example_id}")
+def delete_training_example(example_id: int):
+    if not training_room.delete_example(example_id):
+        raise HTTPException(404, "Training example not found")
+    return {"example_id": example_id, "status": "deleted"}
+
+@router.get("/training/evaluation")
+def evaluate_training_dataset():
+    """Return dataset coverage and review readiness; this does not train a model."""
+    return training_room.evaluate_dataset()
+
+@router.get("/training/export")
+def export_training_dataset():
+    """Export only human-approved examples as JSONL for a future local pipeline."""
+    return training_room.export_approved_jsonl()
 
 @router.get("/analysis/rules")
 def list_analysis_rule_versions(
