@@ -25,7 +25,15 @@ class ApiSecurityTests(unittest.TestCase):
         validate_security_configuration("test", "")
 
     def test_production_with_token_is_valid_configuration(self):
-        validate_security_configuration("production", "long-random-secret")
+        validate_security_configuration("production", "long-random-secret-value-with-32chars")
+
+    def test_short_token_is_rejected(self):
+        with self.assertRaises(RuntimeError):
+            validate_security_configuration("development", "too-short")
+
+    def test_unicode_bearer_token_is_compared_safely(self):
+        token = "mật-khẩu-rất-dài-để-kiểm-thử-1234567890"
+        self.assertTrue(api_token_is_valid(f"Bearer {token}", token))
 
 
 if __name__ == "__main__":
