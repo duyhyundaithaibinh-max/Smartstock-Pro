@@ -83,6 +83,8 @@ class _DashboardPageState extends State<DashboardPage> {
       _accessToken = null;
       _health = null;
       _watchlist = [];
+      _symbolController.clear();
+      _nameController.clear();
       _error = null;
       _loading = false;
       _addingSymbol = false;
@@ -189,7 +191,7 @@ class _DashboardPageState extends State<DashboardPage> {
       final watchlistResponse = await _httpClient
           .get(
             Uri.parse('$_baseUrl/api/v1/watchlist'),
-            headers: _authHeaders
+            headers: apiAuthHeaders(token)
           )
           .timeout(const Duration(seconds: 8));
       if (_handleProtectedStatus(watchlistResponse.statusCode, token)) return;
