@@ -240,6 +240,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   }
   Future<void> _loadDocuments() async {
     final requestVersion = ++_documentsRequestVersion;
+    final category = _categoryFilter;
     setState(() {
       _documentsLoading = true;
       _error = null;
@@ -248,7 +249,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       final response = await http.get(_uri('/api/v1/knowledge/documents', {
         'limit': '100',
         'offset': '0',
-        if (_categoryFilter != 'all') 'category': _categoryFilter,
+        if (category != 'all') 'category': category,
       }), headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
         throw Exception('Backend trả về HTTP ${response.statusCode}');
@@ -337,30 +338,30 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   Future<void> _deleteDocument(Map<String, dynamic> document) async {
     final id = document['id'];
     if (id is! int || _documentActionIds.contains(id)) return;
-    final title = document['title']?.toString() ?? document['filename']?.toString() ?? 'tài liệu';
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Xóa tài liệu?'),
-        content: Text('Xóa "$title" khỏi kho tri thức? Các đoạn trích và chỉ mục liên quan cũng sẽ bị xóa.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Hủy'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Xóa'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted || _documentActionIds.contains(id)) return;
     setState(() {
       _documentActionIds.add(id);
       _error = null;
     });
+    final title = document['title']?.toString() ?? document['filename']?.toString() ?? 'tài liệu';
     try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Xóa tài liệu?'),
+          content: Text('Xóa "$title" khỏi kho tri thức? Các đoạn trích và chỉ mục liên quan cũng sẽ bị xóa.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Hủy'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Xóa'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
       final response = await http.delete(
         _uri('/api/v1/knowledge/documents/$id'),
         headers: apiAuthHeaders(widget.apiToken),
@@ -369,9 +370,15 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         throw Exception('Backend trả về HTTP ${response.statusCode}');
       }
       if (!mounted) return;
+      // Invalidate reads that may have started before this deletion completed.
+      _documentsRequestVersion++;
+      _searchRequestVersion++;
       setState(() {
+        _documentsLoading = false;
+        _loading = false;
         _documents.removeWhere((item) => item is Map && item['id'] == id);
         _results.removeWhere((item) => item is Map && item['document_id'] == id);
+        _context = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Đã xóa tài liệu khỏi kho tri thức.')),
