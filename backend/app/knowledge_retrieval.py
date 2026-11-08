@@ -38,7 +38,7 @@ def tokenize(text: str) -> list[str]:
             tokens.append(_fold_token("".join(current)))
             current = []
     if current:
-        tokens.append("".join(current).casefold())
+        tokens.append(_fold_token("".join(current)))
     return tokens
 
 
