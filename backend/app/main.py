@@ -37,7 +37,12 @@ def _is_public_market_read(path: str) -> bool:
         return True
     if path.startswith("/api/v1/symbols/") and path.endswith("/detail"):
         return True
-    if path.startswith("/api/v1/analysis/"):
+    if path in {
+        "/api/v1/analysis/price-action",
+        "/api/v1/analysis/fibonacci",
+        "/api/v1/analysis/elliott",
+        "/api/v1/analysis/volume-flow",
+    }:
         return True
     return False
 
