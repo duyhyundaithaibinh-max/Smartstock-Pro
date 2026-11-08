@@ -460,7 +460,7 @@ void main() {
 
   testWidgets('403, 422 and 500 do not clear an authenticated session',
       (tester) async {
-    for (final status in [403, 422, 500]) {
+    for (final status in [403, 409, 422, 500]) {
       final client = MockClient((request) async {
         if (request.url.path.endsWith('/auth/status')) {
           return _json(200, {'owner_initialized': true});
@@ -484,6 +484,8 @@ void main() {
       expect(find.textContaining('RAW-PRIVATE-BODY'), findsNothing);
       if (status == 403) {
         expect(find.textContaining('Bạn không có quyền'), findsOneWidget);
+      } else if (status == 409) {
+        expect(find.textContaining('Dữ liệu đang xung đột'), findsOneWidget);
       } else if (status == 422) {
         expect(find.textContaining('Dữ liệu gửi lên chưa hợp lệ'), findsOneWidget);
       } else {
@@ -492,6 +494,34 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       client.close();
     }
+  });
+
+  testWidgets('network failure does not clear the active session or expose exception text',
+      (tester) async {
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('/auth/status')) {
+        return _json(200, {'owner_initialized': true});
+      }
+      if (request.url.path.endsWith('/auth/login')) {
+        return _json(200, {'access_token': _token});
+      }
+      if (request.url.path == '/health') {
+        return _json(200, {'status': 'ok', 'version': 'test'});
+      }
+      if (request.url.path == '/api/v1/watchlist') {
+        throw Exception('NETWORK-INTERNAL-DETAIL-$_token');
+      }
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+    await _pumpDashboard(tester, client);
+    await _login(tester);
+
+    expect(find.text('SmartStock Pro • Đăng nhập'), findsNothing);
+    expect(find.text('Danh sách theo dõi'), findsOneWidget);
+    expect(find.textContaining('NETWORK-INTERNAL-DETAIL'), findsNothing);
+    expect(find.textContaining('Không kết nối được máy chủ'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
   });
 
   testWidgets('multiple expired-session callbacks only navigate once',
