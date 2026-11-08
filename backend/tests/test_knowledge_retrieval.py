@@ -22,6 +22,23 @@ class KnowledgeRetrievalTests(unittest.TestCase):
     def test_tokenizer_preserves_vietnamese_diacritics_and_casefolds(self):
         self.assertEqual(tokenize("FIBONACCI và Phân Tích"), ["fibonacci", "và", "phân", "tích"])
 
+    def test_tokenizer_matches_vietnamese_without_diacritics(self):
+        self.assertEqual(tokenize("FIBONACCI và Phân Tích"), ["fibonacci", "va", "phan", "tich"])
+        self.assertEqual(tokenize("TÍCH LŨY ĐƯỜNG"), ["tich", "luy", "duong"])
+
+    def test_search_matches_accented_source_with_unaccented_query(self):
+        knowledge_base.ingest_document(
+            "tich-luy.md",
+            "Phân tích dòng tiền và dấu hiệu tích lũy cổ phiếu.".encode("utf-8"),
+            source="user_research",
+            title="Tích lũy",
+        )
+        result = search_knowledge("phan tich dong tien tich luy")
+        self.assertEqual(result["total"], 1)
+        self.assertEqual(result["results"][0]["title"], "Tích lũy")
+        self.assertIn("tich", result["results"][0]["matched_terms"])
+        self.assertIn("tích lũy", result["results"][0]["text"])
+
     def test_search_returns_ranked_source_attributed_chunks(self):
         knowledge_base.ingest_document(
             "elliott.md",
