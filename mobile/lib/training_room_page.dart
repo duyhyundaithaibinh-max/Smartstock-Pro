@@ -89,6 +89,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       safeApiErrorMessage(error, fallback: fallback);
 
   Future<void> _loadTrainingData() async {
+    if (!mounted || _sessionExpired) return;
     final requestVersion = ++_trainingDataRequestVersion;
     if (mounted) {
       setState(() {
@@ -133,6 +134,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   }
 
   Future<void> _saveTrainingExample() async {
+    if (!mounted || _sessionExpired) return;
     if (_savingExample) return;
     final question = _trainingQuestionController.text.trim();
     final answer = _trainingAnswerController.text.trim();
@@ -174,6 +176,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   }
 
   Future<void> _approveTrainingExample(int id) async {
+    if (!mounted || _sessionExpired) return;
     if (_trainingActionIds.contains(id)) return;
     setState(() {
       _trainingActionIds.add(id);
@@ -201,6 +204,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   }
 
   Future<void> _deleteTrainingExample(int id) async {
+    if (!mounted || _sessionExpired) return;
     if (_trainingActionIds.contains(id)) return;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -219,7 +223,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
+    if (confirmed != true || !mounted || _sessionExpired) return;
     setState(() {
       _trainingActionIds.add(id);
       _error = null;
@@ -246,6 +250,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   }
 
   Future<void> _copyTrainingExport() async {
+    if (!mounted || _sessionExpired) return;
     if (_exportingTraining) return;
     setState(() {
       _exportingTraining = true;
@@ -267,6 +272,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     }
   }
   Future<void> _loadDocuments() async {
+    if (!mounted || _sessionExpired) return;
     final requestVersion = ++_documentsRequestVersion;
     final category = _categoryFilter;
     setState(() {
@@ -296,6 +302,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   }
 
   Future<void> _pickAndUpload() async {
+    if (!mounted || _sessionExpired) return;
     if (_uploading) return;
     setState(() {
       _uploading = true;
@@ -355,6 +362,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   }
 
   Future<void> _deleteDocument(Map<String, dynamic> document) async {
+    if (!mounted || _sessionExpired) return;
     final id = document['id'];
     if (id is! int || _documentActionIds.contains(id)) return;
     setState(() {
@@ -408,6 +416,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   }
 
   Future<void> _search() async {
+    if (!mounted || _sessionExpired) return;
     final requestVersion = ++_searchRequestVersion;
     final query = _queryController.text.trim();
     if (query.isEmpty) {
