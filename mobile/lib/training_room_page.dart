@@ -76,8 +76,10 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
 
   void _checkResponse(http.Response response, {required int expectedStatus}) {
     if (response.statusCode == 401) {
-      _sessionExpired = true;
-      widget.onSessionExpired?.call(widget.apiToken);
+      if (!_sessionExpired) {
+        _sessionExpired = true;
+        widget.onSessionExpired?.call(widget.apiToken);
+      }
       throw const ApiRequestException(401);
     }
     if (response.statusCode != expectedStatus) {
@@ -108,7 +110,10 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         ).timeout(const Duration(seconds: 20)),
       ]);
       if (responses.any((response) => response.statusCode == 401)) {
-        widget.onSessionExpired?.call(widget.apiToken);
+        if (!_sessionExpired) {
+          _sessionExpired = true;
+          widget.onSessionExpired?.call(widget.apiToken);
+        }
         throw const ApiRequestException(401);
       }
       for (final response in responses) {
