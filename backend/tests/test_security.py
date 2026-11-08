@@ -27,7 +27,7 @@ class ApiTokenValidationTests(unittest.TestCase):
             validate_security_configuration("production", "")
 
     def test_production_accepts_configured_api_token(self):
-        validate_security_configuration("production", "secret-token")
+        validate_security_configuration("production", "long-random-secret-value-with-32chars")
 
     def test_development_allows_token_to_remain_unconfigured(self):
         validate_security_configuration("development", "")
