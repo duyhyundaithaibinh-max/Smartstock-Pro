@@ -561,7 +561,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                       icon: _uploading
                           ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.upload_file),
-                      label: Text(_uploading ? 'Đang nhập tài liệu...' : 'Chọn tài liệu từ điện thoại'),
+                      label: Text(_uploading ? 'Đang chọn hoặc nhập tài liệu...' : 'Chọn tài liệu từ điện thoại'),
                     ),
                   ),
                   const SizedBox(height: 8),
