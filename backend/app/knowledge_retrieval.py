@@ -129,6 +129,11 @@ def build_retrieval_context(search_result: dict[str, Any], max_chars: int = 12_0
             continue
         passages.append({
             "citation_id": item["citation_id"],
+            "document_id": item["document_id"],
+            "chunk_id": item["chunk_id"],
+            "chunk_index": item["chunk_index"],
+            "char_start": item["char_start"],
+            "char_end": item["char_end"],
             "title": item["title"],
             "filename": item["filename"],
             "source": item["source"],
