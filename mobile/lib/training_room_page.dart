@@ -113,6 +113,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       for (final response in responses) {
         _checkResponse(response, expectedStatus: 200);
       }
+      if (!mounted || _sessionExpired) return;
       final examples = jsonDecode(responses[0].body) as Map<String, dynamic>;
       final evaluation = jsonDecode(responses[1].body) as Map<String, dynamic>;
       if (!mounted || requestVersion != _trainingDataRequestVersion) return;
@@ -254,6 +255,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       final response = await _httpClient.get(_uri('/api/v1/training/export'),
           headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 20));
       _checkResponse(response, expectedStatus: 200);
+      if (!mounted || _sessionExpired) return;
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
       await Clipboard.setData(ClipboardData(text: payload['content']?.toString() ?? ''));
       if (!mounted) return;
@@ -278,8 +280,9 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         if (category != 'all') 'category': category,
       }), headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 20));
       _checkResponse(response, expectedStatus: 200);
+      if (!mounted || _sessionExpired) return;
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
-      if (!mounted || requestVersion != _documentsRequestVersion) return;
+      if (requestVersion != _documentsRequestVersion) return;
       setState(() => _documents = payload['items'] as List<dynamic>? ?? []);
     } catch (error) {
       if (mounted && requestVersion == _documentsRequestVersion) {
@@ -337,7 +340,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         throw const SafeApiException('Tài liệu này đã được nhập trước đó (trùng nội dung).');
       }
       _checkResponse(response, expectedStatus: 201);
-      if (!mounted) return;
+      if (!mounted || _sessionExpired) return;
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Đã nhập "${payload['title'] ?? file.name}" vào kho tri thức.')),
@@ -383,7 +386,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         headers: apiAuthHeaders(widget.apiToken),
       ).timeout(const Duration(seconds: 20));
       _checkResponse(response, expectedStatus: 200);
-      if (!mounted) return;
+      if (!mounted || _sessionExpired) return;
       // Invalidate reads that may have started before this deletion completed.
       _documentsRequestVersion++;
       _searchRequestVersion++;
@@ -429,8 +432,9 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         headers: apiAuthHeaders(widget.apiToken),
       ).timeout(const Duration(seconds: 20));
       _checkResponse(response, expectedStatus: 200);
+      if (!mounted || _sessionExpired) return;
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
-      if (!mounted || requestVersion != _searchRequestVersion) return;
+      if (requestVersion != _searchRequestVersion) return;
       setState(() {
         _results = payload['results'] as List<dynamic>? ?? [];
         _context = payload['retrieval_context'] as Map<String, dynamic>?;
