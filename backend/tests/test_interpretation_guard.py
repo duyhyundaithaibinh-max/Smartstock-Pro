@@ -14,7 +14,11 @@ def report():
         "as_of": "2026-11-06T00:00:00+07:00",
         "bars_available": 120,
         "latest_close": 42.5,
-        "indicators": {"rsi14": 61.2, "macd": 0.8, "macd_signal": 0.4, "ema20": 41.7, "ema50": 39.9, "atr14": 1.1},
+        "indicators": {
+            "rsi": 61.2, "rsi_period": 9, "macd": 0.8, "macd_signal": 0.4,
+            "ema_fast": 41.7, "ema_fast_period": 10, "ema_slow": 39.9,
+            "ema_slow_period": 30, "atr": 1.1, "atr_period": 10,
+        },
         "trend_and_price_action": {"trend": {"classification": "uptrend"}, "breakout": {"state": "inside_range"}},
         "volume_flow": {"classification": "accumulation_candidate"},
         "scenarios": [
@@ -41,7 +45,8 @@ def valid_proposal():
 def test_context_contains_allowlisted_engine_facts_only(report):
     context = build_interpretation_context(report)
     assert context["facts"]["market.latest_close"]["value"] == 42.5
-    assert context["facts"]["indicator.rsi14"]["value"] == 61.2
+    assert context["facts"]["indicator.rsi"]["value"] == 61.2
+    assert context["facts"]["indicator.rsi_period"]["value"] == 9
     assert "latest_close" not in context["facts"]
 
 
