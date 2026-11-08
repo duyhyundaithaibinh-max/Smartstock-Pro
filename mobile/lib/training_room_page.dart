@@ -166,7 +166,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       _trainingAnswerController.clear();
       _trainingCitationsController.clear();
       await _loadTrainingData();
-      if (!mounted) return;
+      if (!mounted || _sessionExpired) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã lưu ví dụ ở trạng thái chờ duyệt.')));
     } catch (error) {
       if (mounted) setState(() => _error = 'Không lưu được ví dụ: ${_safeError(error, 'Đã xảy ra lỗi khi lưu ví dụ.')}');
@@ -263,7 +263,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       if (!mounted || _sessionExpired) return;
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
       await Clipboard.setData(ClipboardData(text: payload['content']?.toString() ?? ''));
-      if (!mounted) return;
+      if (!mounted || _sessionExpired) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã sao chép ${payload['count'] ?? 0} ví dụ đã duyệt dạng JSONL.')));
     } catch (error) {
       if (mounted) setState(() => _error = 'Không xuất được dữ liệu: ${_safeError(error, 'Đã xảy ra lỗi khi xuất dữ liệu.')}');
@@ -313,7 +313,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         type: FileType.custom,
         allowedExtensions: const ['txt', 'md', 'csv', 'pdf'],
       );
-      if (!mounted || file == null) return;
+      if (!mounted || _sessionExpired || file == null) return;
       final fileLength = file.lengthSync() ?? await file.length();
       if (fileLength == null || fileLength <= 0) {
         throw const SafeApiException('Không đọc được kích thước tệp trên thiết bị.');
@@ -322,7 +322,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         throw const SafeApiException('Tệp vượt quá giới hạn 10 MB.');
       }
       final bytes = await file.readAsBytes();
-      if (!mounted) return;
+      if (!mounted || _sessionExpired) return;
       if (bytes.isEmpty) {
         throw const SafeApiException('Không đọc được nội dung tệp trên thiết bị.');
       }
@@ -388,7 +388,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
           ],
         ),
       );
-      if (confirmed != true || !mounted) return;
+      if (confirmed != true || !mounted || _sessionExpired) return;
       final response = await _httpClient.delete(
         _uri('/api/v1/knowledge/documents/$id'),
         headers: apiAuthHeaders(widget.apiToken),
