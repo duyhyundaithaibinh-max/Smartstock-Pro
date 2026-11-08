@@ -87,8 +87,15 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     final topic = _trainingTopicController.text.trim();
     final citations = _trainingCitationsController.text
         .split(',').map((item) => item.trim()).where((item) => item.isNotEmpty).toList();
-    if (question.length < 10 || answer.length < 20 || citations.isEmpty) {
-      setState(() => _error = 'Câu hỏi tối thiểu 10 ký tự, đáp án 20 ký tự và cần ít nhất một mã nguồn kb:document:chunk.');
+    bool isCitationId(String value) {
+      final parts = value.split(':');
+      return parts.length == 3 && parts[0] == 'kb' &&
+          int.tryParse(parts[1]) != null && int.tryParse(parts[2]) != null;
+    }
+    if (question.length < 10 || answer.length < 20 || citations.isEmpty ||
+        citations.length > 10 || citations.any((item) => !isCitationId(item)) ||
+        citations.toSet().length != citations.length) {
+      setState(() => _error = 'Câu hỏi tối thiểu 10 ký tự, đáp án 20 ký tự; cần 1–10 mã nguồn kb:document_id:chunk_index hợp lệ và không trùng.');
       return;
     }
     setState(() { _savingExample = true; _error = null; });
