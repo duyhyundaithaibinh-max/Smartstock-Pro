@@ -191,18 +191,18 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
               FilledButton(key: const ValueKey('edit-save'), onPressed: () {
                 final values = citationText.split(',').map((v) => v.trim())
                   .where((v) => v.isNotEmpty).toList();
-                if (questionText.trim().length < 10 || question.text.trim().length > 1000 ||
-                    answerText.trim().length < 20 || answer.text.trim().length > 5000 ||
-                    topicText.trim().isEmpty || topic.text.trim().length > 80 ||
+                if (questionText.trim().length < 10 || questionText.trim().length > 1000 ||
+                    answerText.trim().length < 20 || answerText.trim().length > 5000 ||
+                    topicText.trim().isEmpty || topicText.trim().length > 80 ||
                     !_validCitationList(values)) {
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                     content: Text('Kiểm tra giới hạn nội dung và 1–10 citation hợp lệ.')));
                   return;
                 }
                 Navigator.pop(dialogContext, {
-                  'question': question.text.trim(),
-                  'expected_answer': answer.text.trim(),
-                  'topic': topic.text.trim(),
+                  'question': questionText.trim(),
+                  'expected_answer': answerText.trim(),
+                  'topic': topicText.trim(),
                   'citation_ids': values,
                 });
               }, child: const Text('Lưu thay đổi')),
@@ -313,13 +313,13 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
               final raw = scoreText.trim();
               final value = int.tryParse(raw);
               if (value == null || value < 0 || value > 100 ||
-                  rationaleText.trim().length < 10 || rationale.text.trim().length > 2000) {
+                  rationaleText.trim().length < 10 || rationaleText.trim().length > 2000) {
                 refresh(() => validation = 'Điểm nguyên 0–100 và nhận xét 10–2.000 ký tự là bắt buộc.');
                 return;
               }
               Navigator.pop(dialogContext, {
                 'score': value, 'rubric_version': rubric,
-                'rationale': rationale.text.trim(),
+                'rationale': rationaleText.trim(),
               });
             }, child: const Text('Gửi đánh giá')),
           ],
