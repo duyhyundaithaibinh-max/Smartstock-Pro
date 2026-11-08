@@ -102,7 +102,8 @@ def list_examples(limit: int = 100, offset: int = 0, status: str | None = None) 
             "items": [_serialize(row) for row in rows]}
 
 
-def approve_example(example_id: int) -> dict[str, Any] | None:
+def approve_example(example_id: int, reviewer_user_id: int) -> dict[str, Any] | None:
+    reviewer_id = _owner_id(reviewer_user_id)
     with connection() as conn:
         # Reserve the SQLite write lock before reading the example or its
         # citations. This serializes approval with concurrent source deletion.
@@ -119,9 +120,14 @@ def approve_example(example_id: int) -> dict[str, Any] | None:
             if not _citation_exists(conn, citation):
                 raise TrainingDataError(f"Source is missing or invalid; cannot approve: {citation}")
         conn.execute(
-            "UPDATE training_examples SET status='approved',updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            "UPDATE training_examples SET status='approved',updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='draft'",
             (example_id,),
         )
+        conn.execute("""
+            INSERT INTO training_example_review_events
+                (example_id,action,reason,revision_from,revision_to,changed_fields,reviewer_user_id)
+            VALUES(?,'approved',NULL,?,?,'[]',?)
+        """, (example_id, row["revision"], row["revision"], reviewer_id))
         updated = conn.execute(
             "SELECT * FROM training_examples WHERE id=?", (example_id,)
         ).fetchone()
@@ -325,3 +331,34 @@ def list_quality_reviews(example_id: int) -> list[dict[str, Any]] | None:
             WHERE example_id=? ORDER BY reviewed_at,id
         """, (example_id,)).fetchall()
     return [dict(row) for row in rows]
+
+
+def list_review_events(example_id: int, limit: int = 50, offset: int = 0) -> dict[str, Any] | None:
+    if type(limit) is not int or not 1 <= limit <= 100:
+        raise TrainingDataError("limit must be between 1 and 100.")
+    if type(offset) is not int or offset < 0:
+        raise TrainingDataError("offset must be zero or greater.")
+    with connection() as conn:
+        if not conn.execute("SELECT 1 FROM training_examples WHERE id=?", (example_id,)).fetchone():
+            return None
+        total = conn.execute(
+            "SELECT COUNT(*) FROM training_example_review_events WHERE example_id=?",
+            (example_id,),
+        ).fetchone()[0]
+        rows = conn.execute("""
+            SELECT id,example_id,action,reason,revision_from,revision_to,changed_fields,
+                   reviewer_user_id,created_at
+            FROM training_example_review_events
+            WHERE example_id=?
+            ORDER BY id ASC
+            LIMIT ? OFFSET ?
+        """, (example_id, limit, offset)).fetchall()
+    items = []
+    for row in rows:
+        item = dict(row)
+        item["changed_fields"] = json.loads(item["changed_fields"])
+        # Single-owner MVP: expose a stable role label, not account identifiers or credentials.
+        item["reviewer_label"] = "Owner"
+        items.append(item)
+    return {"example_id": example_id, "items": items, "count": len(items),
+            "total": total, "limit": limit, "offset": offset}
