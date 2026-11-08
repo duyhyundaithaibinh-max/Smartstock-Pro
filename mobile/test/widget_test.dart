@@ -252,7 +252,7 @@ void main() {
 
     expect(find.textContaining('RAW-SECRET'), findsNothing);
     expect(find.textContaining('RAW-TOKEN'), findsNothing);
-    expect(find.textContaining('Đăng nhập thất bại (HTTP 401).'), findsOneWidget);
+    expect(find.textContaining('Tên đăng nhập hoặc mật khẩu không đúng.'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     client.close();
   });
