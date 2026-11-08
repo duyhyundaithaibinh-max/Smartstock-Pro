@@ -53,8 +53,8 @@ class AnalysisReportTests(unittest.TestCase):
         ):
             result = build_analysis_report(self.make_candles())
         bearish = next(item for item in result["scenarios"] if item["name"] == "bearish")
-        self.assertIn("35 nến", bearish["evidence"][0])
-        self.assertNotIn("20 nến", bearish["evidence"][0])
+        self.assertTrue(any("35 nến" in item for item in bearish["evidence"]))
+        self.assertFalse(any("20 nến" in item for item in bearish["evidence"]))
 
     def test_empty_candles_rejected(self):
         with self.assertRaises(ValueError):
