@@ -590,6 +590,7 @@ class TrainingReviewApiTests(unittest.TestCase):
         with self.assertRaises(sqlite3.DatabaseError):
             db._migrate_training_review(conn)
         conn.set_authorizer(None)
+        conn.rollback()
         old_sql = conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='training_examples'"
         ).fetchone()["sql"]
@@ -609,15 +610,27 @@ class TrainingReviewApiTests(unittest.TestCase):
         self.assertEqual(rows[0]["created_at"], "2026-01-01T00:00:00")
         self.assertEqual(rows[0]["updated_at"], "2026-01-02T00:00:00")
         self.assertEqual([row["revision"] for row in rows], [1, 1])
+        self.assertEqual(rows[1]["question"], "Approved question")
+        self.assertEqual(rows[1]["expected_answer"], "Approved answer")
+        self.assertEqual(rows[1]["topic"], "elliott")
+        self.assertEqual(rows[1]["citation_ids"], '["kb:4:2"]')
         self.assertEqual(rows[1]["status"], "approved")
+        self.assertEqual(rows[1]["created_at"], "2026-02-01T00:00:00")
+        self.assertEqual(rows[1]["updated_at"], "2026-02-02T00:00:00")
         self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
         index_names = {row["name"] for row in conn.execute("PRAGMA index_list(training_examples)")}
         self.assertIn("idx_training_examples_status_created", index_names)
+        event_indexes = {row["name"] for row in conn.execute("PRAGMA index_list(training_example_review_events)")}
+        self.assertIn("idx_training_review_events_example", event_indexes)
+        quality_indexes = {row["name"] for row in conn.execute("PRAGMA index_list(training_example_quality_reviews)")}
+        self.assertIn("idx_training_quality_reviews_example", quality_indexes)
         trigger_names = {row["name"] for row in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='trigger'"
         )}
-        self.assertIn("trg_training_review_events_no_update", trigger_names)
-        self.assertIn("trg_training_quality_reviews_no_delete", trigger_names)
+        self.assertTrue({
+            "trg_training_review_events_no_update", "trg_training_review_events_no_delete",
+            "trg_training_quality_reviews_no_update", "trg_training_quality_reviews_no_delete",
+        }.issubset(trigger_names))
         snapshot = [tuple(row) for row in rows]
         db._migrate_training_review(conn)
         conn.commit()
@@ -626,6 +639,12 @@ class TrainingReviewApiTests(unittest.TestCase):
         )])
         self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
         conn.close()
+        with patch("app.db.DB_PATH", str(path)):
+            db.init_db()
+            db.init_db()
+        check = sqlite3.connect(path)
+        self.assertEqual(check.execute("SELECT COUNT(*) FROM training_examples").fetchone()[0], 2)
+        check.close()
 
 
 if __name__ == "__main__":
