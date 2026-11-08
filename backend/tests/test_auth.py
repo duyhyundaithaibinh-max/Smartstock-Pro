@@ -120,9 +120,8 @@ class LocalAuthenticationTests(unittest.TestCase):
         self.assertEqual(results.count("rejected"), 1)
         self.assertEqual(len(opened_connections), 2)
         self.assertIsNot(opened_connections[0], opened_connections[1])
-        for conn in opened_connections:
-            self.assertTrue(conn is not None)
-            conn.close()
+        # Each connection is already closed by app.db.connection() in its
+        # creating worker; do not close SQLite handles from the test thread.
 
         self.assertEqual(self._owner_count(), 1)
         self.assertIsNotNone(self._bootstrap_row()["consumed_at"])
