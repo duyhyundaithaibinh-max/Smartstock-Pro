@@ -73,6 +73,19 @@ class TrainingRoomTests(unittest.TestCase):
             market.approve_training_example(draft["id"])
         self.assertEqual(error.exception.status_code, 422)
 
+    def test_export_excludes_approved_examples_after_source_deletion(self):
+        draft = market.create_training_example(self._payload())
+        market.approve_training_example(draft["id"])
+        knowledge_base.delete_document(self.document["id"])
+
+        exported = market.export_training_dataset()
+        report = market.evaluate_training_dataset()
+
+        self.assertEqual(exported["count"], 0)
+        self.assertEqual(report["approved_examples"], 1)
+        self.assertEqual(report["valid_approved_examples"], 0)
+        self.assertEqual(report["approved_examples_with_missing_sources"], 1)
+
     def test_evaluation_reports_duplicates_and_review_counts(self):
         market.create_training_example(self._payload())
         market.create_training_example(self._payload(
