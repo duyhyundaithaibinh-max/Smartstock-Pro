@@ -29,6 +29,16 @@ def _clean_text(value: Any, label: str, minimum: int, maximum: int) -> str:
     return result
 
 
+def _citation_exists(conn: Any, citation: str) -> bool:
+    match = _CITATION.fullmatch(citation)
+    if match is None:
+        return False
+    return conn.execute(
+        """SELECT 1 FROM knowledge_chunks WHERE document_id=? AND chunk_index=?""",
+        (int(match.group(1)), int(match.group(2))),
+    ).fetchone() is not None
+
+
 def _validate_citations(citations: Any) -> list[str]:
     if not isinstance(citations, list) or not 1 <= len(citations) <= 10:
         raise TrainingDataError("Provide 1 to 10 source citation IDs.")
@@ -38,15 +48,8 @@ def _validate_citations(citations: Any) -> list[str]:
             raise TrainingDataError("Citation IDs must use the kb:document_id:chunk_index format.")
         if citation in clean:
             raise TrainingDataError("Duplicate citation IDs are not allowed.")
-        match = _CITATION.fullmatch(citation)
-        assert match is not None
-        document_id, chunk_index = int(match.group(1)), int(match.group(2))
         with connection() as conn:
-            exists = conn.execute(
-                """SELECT 1 FROM knowledge_chunks
-                   WHERE document_id=? AND chunk_index=?""",
-                (document_id, chunk_index),
-            ).fetchone()
+            exists = _citation_exists(conn, citation)
         if not exists:
             raise TrainingDataError(f"Source citation does not exist: {citation}")
         clean.append(citation)
@@ -102,16 +105,8 @@ def approve_example(example_id: int) -> dict[str, Any] | None:
             return None
         citations = json.loads(row["citation_ids"])
         for citation in citations:
-            match = _CITATION.fullmatch(citation)
-            if match is None:
-                raise TrainingDataError("Stored citation format is invalid.")
-            exists = conn.execute(
-                """SELECT 1 FROM knowledge_chunks
-                   WHERE document_id=? AND chunk_index=?""",
-                (int(match.group(1)), int(match.group(2))),
-            ).fetchone()
-            if not exists:
-                raise TrainingDataError(f"Source was deleted; cannot approve: {citation}")
+            if not _citation_exists(conn, citation):
+                raise TrainingDataError(f"Source is missing or invalid; cannot approve: {citation}")
         conn.execute(
             "UPDATE training_examples SET status='approved',updated_at=CURRENT_TIMESTAMP WHERE id=?",
             (example_id,),
@@ -132,6 +127,12 @@ def evaluate_dataset() -> dict[str, Any]:
     with connection() as conn:
         rows = conn.execute("SELECT * FROM training_examples ORDER BY id").fetchall()
         source_count = conn.execute("SELECT COUNT(*) FROM knowledge_documents").fetchone()[0]
+        invalid_approved = sum(
+            row["status"] == "approved" and not all(
+                _citation_exists(conn, citation) for citation in json.loads(row["citation_ids"])
+            )
+            for row in rows
+        )
     normalized_questions = [
         " ".join(str(row["question"]).casefold().split()) for row in rows
     ]
@@ -139,30 +140,38 @@ def evaluate_dataset() -> dict[str, Any]:
     duplicates = sorted(question for question, count in duplicate_counts.items() if count > 1)
     topics = Counter(row["topic"] for row in rows)
     approved = sum(row["status"] == "approved" for row in rows)
+    valid_approved = approved - invalid_approved
     draft = len(rows) - approved
     return {
         "total_examples": len(rows),
         "approved_examples": approved,
+        "valid_approved_examples": valid_approved,
         "draft_examples": draft,
+        "approved_examples_with_missing_sources": invalid_approved,
         "source_documents": source_count,
         "duplicate_question_groups": len(duplicates),
         "topics": dict(sorted(topics.items())),
-        "readiness": "ready_for_local_model_evaluation" if approved >= 10 and not duplicates
+        "readiness": "ready_for_local_model_evaluation"
+                     if valid_approved >= 10 and not duplicates and not invalid_approved
                      else "collect_and_review_more_examples",
         "minimum_approved_examples_for_initial_evaluation": 10,
         "notes": [
             "Approval is a human review step, not a claim that an answer is objectively correct.",
+            "Examples with deleted source chunks are excluded from export.",
             "Examples are not used to train a model automatically.",
             "No external model/API is called and no paid service is required.",
         ],
     }
-
 
 def export_approved_jsonl() -> dict[str, Any]:
     with connection() as conn:
         rows = conn.execute(
             "SELECT * FROM training_examples WHERE status='approved' ORDER BY id"
         ).fetchall()
+        rows = [
+            row for row in rows
+            if all(_citation_exists(conn, citation) for citation in json.loads(row["citation_ids"]))
+        ]
     lines = []
     for row in rows:
         item = _serialize(row)
