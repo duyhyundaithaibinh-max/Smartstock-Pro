@@ -1,0 +1,94 @@
+{
+  "examples": [
+    {
+      "document": "01-elliott-wave.md",
+      "topic": "elliott",
+      "question": "Ba quy tắc cứng của mô hình Elliott impulse là gì?",
+      "expected_answer": "Sóng 2 không hồi vượt điểm bắt đầu sóng 1; sóng 3 không được là sóng ngắn nhất trong các sóng 1, 3, 5; và sóng 4 không chồng lấn vùng giá sóng 1 trong impulse chuẩn."
+    },
+    {
+      "document": "01-elliott-wave.md",
+      "topic": "elliott",
+      "question": "Khi sóng 4 chồng lấn sóng 1 trong impulse chuẩn thì xử lý thế nào?",
+      "expected_answer": "Phải loại bỏ cách đếm impulse chuẩn tương ứng hoặc chuyển sang một giả thuyết cấu trúc khác có quy tắc riêng; không tự ý sửa nhãn sóng để hợp thức hóa dữ liệu."
+    },
+    {
+      "document": "01-elliott-wave.md",
+      "topic": "elliott",
+      "question": "Vì sao tỷ lệ Fibonacci không tự xác nhận được cách đếm Elliott?",
+      "expected_answer": "Fibonacci chỉ cung cấp vùng tham chiếu cho độ hồi hoặc độ dài sóng. Cách đếm vẫn phải thỏa quy tắc cấu trúc, pivot, cấp độ sóng và có điều kiện xác nhận cùng điều kiện vô hiệu."
+    },
+    {
+      "document": "02-fibonacci.md",
+      "topic": "fibonacci",
+      "question": "Các mức Fibonacci thoái lui thường được quan sát là những mức nào?",
+      "expected_answer": "Các mức thường quan sát gồm 23,6%, 38,2%, 50%, 61,8% và 78,6%. Đây là vùng tham chiếu phản ứng giá, không phải hỗ trợ hay kháng cự chắc chắn."
+    },
+    {
+      "document": "02-fibonacci.md",
+      "topic": "fibonacci",
+      "question": "Cần ghi rõ những gì khi sử dụng Fibonacci thời gian?",
+      "expected_answer": "Cần ghi hai pivot neo, khoảng cách số thanh nến, timeframe và đơn vị đếm như ngày giao dịch, tuần hoặc tháng; không trộn ngày lịch với phiên giao dịch."
+    },
+    {
+      "document": "02-fibonacci.md",
+      "topic": "fibonacci",
+      "question": "Hợp lưu Fibonacci có ý nghĩa gì và có giới hạn gì?",
+      "expected_answer": "Hợp lưu là vùng có nhiều yếu tố kỹ thuật như Fibonacci, pivot cũ, hỗ trợ kháng cự và volume cùng hội tụ. Cần tránh đếm một yếu tố nhiều lần và vẫn phải chờ phản ứng giá xác nhận."
+    },
+    {
+      "document": "03-market-cycles.md",
+      "topic": "cycles",
+      "question": "Một giả thuyết chu kỳ 80 tuần cần được xác định thế nào?",
+      "expected_answer": "Cần xác định sự kiện neo, timeframe tuần, cách đếm số thanh nến, dung sai thời gian, dấu hiệu xác nhận và điều kiện bác bỏ. Không kết luận chỉ từ một chu kỳ lịch sử."
+    },
+    {
+      "document": "03-market-cycles.md",
+      "topic": "cycles",
+      "question": "Vì sao cửa sổ thời gian không phải tín hiệu đảo chiều chắc chắn?",
+      "expected_answer": "Chu kỳ và Fibonacci thời gian chỉ xác định khoảng cần chú ý. Nếu giá không phá vỡ cấu trúc, không có xác nhận volume hoặc không giữ được vùng quan trọng thì không nên ép kịch bản đảo chiều."
+    },
+    {
+      "document": "03-market-cycles.md",
+      "topic": "cycles",
+      "question": "Nêu ba cách giảm thiên lệch nhìn trước dữ liệu khi kiểm định chu kỳ.",
+      "expected_answer": "Chọn điểm neo trước khi biết kết quả, giữ nguyên định nghĩa đỉnh đáy, ghi nhận cả chu kỳ thất bại và kiểm tra trên tập mã hoặc giai đoạn ngoài mẫu chưa dùng để xây giả thuyết."
+    },
+    {
+      "document": "04-volume-flow-breakout.md",
+      "topic": "volume_flow",
+      "question": "Volume co hẹp trong nền tích lũy có chứng minh tổ chức đang gom hàng không?",
+      "expected_answer": "Không. Volume co hẹp có thể phản ánh nguồn cung giảm hoặc sự thiếu quan tâm. Cần xem phản ứng giá tại kháng cự, thanh khoản, chất lượng nến và diễn biến khi breakout."
+    },
+    {
+      "document": "04-volume-flow-breakout.md",
+      "topic": "volume_flow",
+      "question": "Những điều kiện nào thường dùng để đánh giá breakout có chất lượng?",
+      "expected_answer": "Giá đóng cửa vượt vùng kháng cự đã xác định trước, volume cao hơn nền tham chiếu, nến đóng cửa ở vị trí tốt, giá không nhanh chóng quay lại nền và có thể retest giữ được vùng breakout."
+    },
+    {
+      "document": "04-volume-flow-breakout.md",
+      "topic": "volume_flow",
+      "question": "OBV và CMF có thể chứng minh chắc chắn dòng tiền của tổ chức không?",
+      "expected_answer": "Không. OBV và CMF là chỉ báo biến đổi từ OHLCV, có thể hỗ trợ quan sát phân kỳ hoặc xác nhận tương đối nhưng không trực tiếp nhận diện nhóm nhà đầu tư hay dòng tiền của tổ chức."
+    },
+    {
+      "document": "05-vietnam-market-data-risk.md",
+      "topic": "vietnam_market",
+      "question": "Vì sao phải xác minh trạng thái điều chỉnh giá trước khi phân tích dài hạn?",
+      "expected_answer": "Cổ tức, thưởng cổ phiếu, quyền mua và chia tách có thể làm thay đổi chuỗi giá. Trộn dữ liệu đã điều chỉnh với chưa điều chỉnh có thể làm sai chỉ báo, pivot và kết luận dài hạn."
+    },
+    {
+      "document": "05-vietnam-market-data-risk.md",
+      "topic": "vietnam_market",
+      "question": "Vì sao SmartStock Pro không được tự sinh các phiên giao dịch bị thiếu?",
+      "expected_answer": "Phiên tự sinh không phải dữ liệu quan sát từ nguồn hợp pháp và có thể làm sai OHLCV, chỉ báo, chu kỳ và kết quả phân tích. Hệ thống phải giữ nguyên khoảng trống và báo rõ chất lượng dữ liệu."
+    },
+    {
+      "document": "05-vietnam-market-data-risk.md",
+      "topic": "vietnam_market",
+      "question": "Giá đóng cửa nhân khối lượng có thay thế số liệu thanh khoản chính thức không?",
+      "expected_answer": "Không. Close nhân volume chỉ là ước tính giá trị giao dịch từ OHLCV, không thay thế số liệu thanh khoản chính thức hoặc dữ liệu khớp lệnh đầy đủ."
+    }
+  ]
+}
