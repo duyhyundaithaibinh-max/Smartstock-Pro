@@ -21,6 +21,16 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_EXTRACTED_CHARS = 2_000_000
 CHUNK_SIZE = 1_200
 CHUNK_OVERLAP = 150
+DOCUMENT_CATEGORIES = {
+    "technical_analysis",
+    "elliott_wave",
+    "fibonacci",
+    "wyckoff",
+    "risk_management",
+    "fundamental_analysis",
+    "market_data",
+    "other",
+}
 
 
 class KnowledgeBaseError(ValueError):
@@ -115,7 +125,13 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVE
     return chunks
 
 
-def ingest_document(filename: str, raw: bytes, source: str = "user_upload", title: str | None = None) -> dict:
+def ingest_document(
+    filename: str,
+    raw: bytes,
+    source: str = "user_upload",
+    title: str | None = None,
+    category: str = "other",
+) -> dict:
     safe_name = Path(filename.replace("\\", "/")).name.strip()
     if not safe_name or len(safe_name) > 255:
         raise KnowledgeBaseError("Filename must contain 1 to 255 characters.")
@@ -124,6 +140,11 @@ def ingest_document(filename: str, raw: bytes, source: str = "user_upload", titl
     source = source.strip()
     if not source or len(source) > 100:
         raise KnowledgeBaseError("Source must contain 1 to 100 characters.")
+    category = category.strip().lower()
+    if category not in DOCUMENT_CATEGORIES:
+        raise KnowledgeBaseError(
+            "Unsupported category. Use one of: " + ", ".join(sorted(DOCUMENT_CATEGORIES))
+        )
     extracted, mime_type = _extract_text(safe_name, raw)
     chunks = chunk_text(extracted)
     if not chunks:
@@ -143,9 +164,9 @@ def ingest_document(filename: str, raw: bytes, source: str = "user_upload", titl
 
         cursor = conn.execute(
             """INSERT INTO knowledge_documents
-               (filename,title,mime_type,source,size_bytes,content_sha256,character_count,chunk_count)
-               VALUES(?,?,?,?,?,?,?,?)""",
-            (safe_name, document_title, mime_type, source, len(raw), digest, len(extracted), len(chunks)),
+               (filename,title,mime_type,source,category,size_bytes,content_sha256,character_count,chunk_count)
+               VALUES(?,?,?,?,?,?,?,?,?)""",
+            (safe_name, document_title, mime_type, source, category, len(raw), digest, len(extracted), len(chunks)),
         )
         document_id = cursor.lastrowid
         conn.executemany(
@@ -160,14 +181,21 @@ def ingest_document(filename: str, raw: bytes, source: str = "user_upload", titl
     return {"status": "indexed", **dict(row)}
 
 
-def list_documents(limit: int = 100, offset: int = 0) -> dict:
+def list_documents(limit: int = 100, offset: int = 0, category: str | None = None) -> dict:
     with connection() as conn:
-        total = conn.execute("SELECT COUNT(*) FROM knowledge_documents").fetchone()[0]
+        if category is not None and category not in DOCUMENT_CATEGORIES:
+            raise KnowledgeBaseError("Unsupported document category")
+        total = conn.execute(
+            "SELECT COUNT(*) FROM knowledge_documents WHERE (? IS NULL OR category=?)",
+            (category, category),
+        ).fetchone()[0]
         rows = conn.execute(
-            """SELECT id,filename,title,mime_type,source,size_bytes,content_sha256,
+            """SELECT id,filename,title,mime_type,source,category,size_bytes,content_sha256,
                       character_count,chunk_count,created_at
-               FROM knowledge_documents ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?""",
-            (limit, offset),
+               FROM knowledge_documents
+               WHERE (? IS NULL OR category=?)
+               ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?""",
+            (category, category, limit, offset),
         ).fetchall()
     return {"total": total, "limit": limit, "offset": offset, "items": [dict(row) for row in rows]}
 
@@ -175,7 +203,7 @@ def list_documents(limit: int = 100, offset: int = 0) -> dict:
 def get_document(document_id: int, include_chunks: bool = True) -> dict | None:
     with connection() as conn:
         row = conn.execute(
-            """SELECT id,filename,title,mime_type,source,size_bytes,content_sha256,
+            """SELECT id,filename,title,mime_type,source,category,size_bytes,content_sha256,
                       character_count,chunk_count,created_at
                FROM knowledge_documents WHERE id=?""",
             (document_id,),
