@@ -85,7 +85,10 @@ def build_analysis_report(candles, rule_config=None, rule_version="1.0.0", rule_
     elif trend_state == "downtrend":
         bearish_evidence.append(f"EMA{ema_fast_period}/EMA{ema_slow_period} và vị trí giá đang nghiêng về xu hướng giảm")
     if breakout_state == "confirmed_bullish":
-        bullish_evidence.append("Breakout vượt biên 20 nến có xác nhận volume")
+        bullish_evidence.append(
+            f"Breakout vượt biên {trend.get('breakout', {}).get('range_lookback_bars', 20)} nến "
+            "có xác nhận volume"
+        )
     elif breakout_state == "confirmed_bearish":
         bearish_evidence.append("Breakdown thủng biên 20 nến có xác nhận volume")
     if flow_state == "accumulation_candidate":
