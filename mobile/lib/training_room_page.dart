@@ -8,9 +8,14 @@ import 'package:http/http.dart' as http;
 /// Local knowledge retrieval and document management.
 /// Search results are source passages, not AI-generated answers.
 class TrainingRoomPage extends StatefulWidget {
-  const TrainingRoomPage({super.key, required this.baseUrl});
+  const TrainingRoomPage({
+    super.key,
+    required this.baseUrl,
+    required this.accessToken,
+  });
 
   final String baseUrl;
+  final String accessToken;
 
   @override
   State<TrainingRoomPage> createState() => _TrainingRoomPageState();
@@ -34,6 +39,10 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   bool _documentsLoading = false;
   bool _searched = false;
 
+  Map<String, String> get _authHeaders => {
+        'Authorization': 'Bearer ${widget.accessToken}',
+      };
+
   Uri _uri(String path, [Map<String, String>? query]) {
     return Uri.parse('${widget.baseUrl}$path').replace(queryParameters: query);
   }
@@ -41,9 +50,9 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   Future<void> _loadTrainingData() async {
     try {
       final responses = await Future.wait([
-        http.get(_uri('/api/v1/training/examples', {'limit': '100', 'offset': '0'}))
+        http.get(_uri('/api/v1/training/examples', {'limit': '100', 'offset': '0'}), headers: _authHeaders)
             .timeout(const Duration(seconds: 20)),
-        http.get(_uri('/api/v1/training/evaluation'))
+        http.get(_uri('/api/v1/training/evaluation'), headers: _authHeaders)
             .timeout(const Duration(seconds: 20)),
       ]);
       if (responses.any((response) => response.statusCode != 200)) {
@@ -82,7 +91,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     try {
       final response = await http.post(
         _uri('/api/v1/training/examples'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json', ..._authHeaders},
         body: jsonEncode({
           'question': question,
           'expected_answer': answer,
@@ -112,6 +121,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     try {
       final response = await http.post(
         _uri('/api/v1/training/examples/$id/approve'),
+        headers: _authHeaders,
       ).timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
         throw Exception('HTTP ${response.statusCode}: ${response.body}');
@@ -126,6 +136,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     try {
       final response = await http.delete(
         _uri('/api/v1/training/examples/$id'),
+        headers: _authHeaders,
       ).timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
         throw Exception('HTTP ${response.statusCode}: ${response.body}');
@@ -140,6 +151,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     try {
       final response = await http.get(
         _uri('/api/v1/training/export'),
+        headers: _authHeaders,
       ).timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
         throw Exception('HTTP ${response.statusCode}');
@@ -165,7 +177,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       final response = await http.get(_uri('/api/v1/knowledge/documents', {
         'limit': '100',
         'offset': '0',
-      })).timeout(const Duration(seconds: 20));
+      }), headers: _authHeaders).timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
         throw Exception('Backend trả về HTTP ${response.statusCode}');
       }
@@ -210,6 +222,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
           'title': file.name.replaceFirst(RegExp(r'\.[^.]+$'), ''),
         }),
       );
+      request.headers.addAll(_authHeaders);
       request.files.add(http.MultipartFile.fromBytes(
         'file',
         bytes,
@@ -267,6 +280,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     try {
       final response = await http.delete(
         _uri('/api/v1/knowledge/documents/$id'),
+        headers: _authHeaders,
       ).timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
         throw Exception('Backend trả về HTTP ${response.statusCode}');
@@ -298,6 +312,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     try {
       final response = await http.get(
         _uri('/api/v1/knowledge/search', {'q': query, 'top_k': '8'}),
+        headers: _authHeaders,
       ).timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
         throw Exception('Backend trả về HTTP ${response.statusCode}: ${response.body}');

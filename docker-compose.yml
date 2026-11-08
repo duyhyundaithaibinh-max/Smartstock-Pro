@@ -6,6 +6,7 @@ services:
       - "8000:8000"
     environment:
       SMARTSTOCK_DB_PATH: /data/smartstock.db
+      SMARTSTOCK_BOOTSTRAP_SECRET_FILE: /data/bootstrap.secret
     volumes:
       - smartstock_data:/data
     restart: unless-stopped
