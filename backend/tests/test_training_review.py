@@ -707,8 +707,8 @@ class TrainingReviewApiTests(unittest.TestCase):
         ).fetchone()[0], 0, "migration must not fabricate historical approval events")
         conn.execute("""
             INSERT INTO training_example_review_events
-                (example_id,action,reason,revision_from,revision_to,changed_fields,reviewer_user_id)
-            VALUES(51,'approved',NULL,1,1,'[]',1)
+                (example_id,action,reason,revision_from,revision_to,changed_fields,reviewer_user_id,reviewer_label)
+            VALUES(51,'approved',NULL,1,1,'[]',1,'Owner')
         """)
         self.assertEqual(conn.execute(
             "SELECT COUNT(*) FROM training_example_review_events"
