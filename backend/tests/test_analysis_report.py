@@ -88,6 +88,13 @@ class AnalysisReportTests(unittest.TestCase):
         )
         self.assertEqual(result["indicators"]["ema_fast_period"], 10)
         self.assertEqual(result["indicators"]["ema_slow_period"], 30)
+        trend = result["trend_and_price_action"]["trend"]
+        self.assertEqual(trend["ema_fast_period"], 10)
+        self.assertEqual(trend["ema_slow_period"], 30)
+        self.assertIsNotNone(trend["ema_fast"])
+        self.assertIsNotNone(trend["ema_slow"])
+        self.assertIsNone(trend["ema20"])
+        self.assertIsNone(trend["ema50"])
         self.assertEqual(result["indicators"]["rsi_period"], 9)
         self.assertEqual(result["indicators"]["macd_fast_period"], 8)
         self.assertEqual(result["indicators"]["macd_slow_period"], 21)
