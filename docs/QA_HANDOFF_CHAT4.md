@@ -1,64 +1,52 @@
 # QA handoff — Chat 4
 
-Last verified: 2026-11-08 05:32 UTC
-Scope: verification and packaging only; no merge or release performed.
+Last verified: 2026-11-08 07:45 UTC
+Scope: automated CI and source-level security review; no merge or release performed.
 
-## Latest verified CI
+## Latest verified backend security CI
 
-- Workflow: SmartStock Pro CI
-- Run: [42450837945](https://github.com/duyhyundaithaibinh-max/Smartstock-Pro/actions/runs/42450837945)
-- Tested commit: `a5598cd97fe3deefa5e4c5b0b47af836fb680451`
-- Branch: `codex-free/sp-019-local-auth`
-- Overall conclusion: **success**
-- Backend job: success; all 135 pytest tests passed.
-- Android job: success
-  - Flutter dependencies resolved
-  - `flutter analyze`: success
-  - `flutter test`: success
-  - Debug APK build: success
-  - Artifact upload: success
+- PR #8 head: `3fe6267265b7012fd03b851f38bd47a93f5c064b`
+- Workflow run: [42458090879](https://github.com/duyhyundaithaibinh-max/Smartstock-Pro/actions/runs/42458090879)
+- Backend: **142 passed, 1 warning**.
+- Regression cases verified in `backend/tests/test_auth.py`:
+  - missing secret (422) and wrong secret (403);
+  - consumed/replay secret rejected;
+  - second first-owner registration rejected;
+  - concurrent two-connection first-owner race permits only one owner;
+  - failed owner INSERT rolls back secret consumption;
+  - POSIX bootstrap file permission 0600;
+  - setup response and captured logs do not expose plaintext secret.
+- This is automated test evidence, not a penetration test or deployment-host smoke test.
 
-## Latest Android artifact
+## Latest verified Android/bootstrap CI
 
-- Name: `smartstock-pro-debug-apk`
-- Artifact ID: `13605841116`
-- Size: 75,930,696 bytes
-- GitHub artifact digest: `sha256:d0dbd8384d15aa107fe8c1adddbe8832a1c998b6e78d7bbecbf9639b9ef4db61`
-- Created: 2026-11-08 05:32:12 UTC
-- Expires: 2027-02-06 05:27:19 UTC
-- Download from the Actions run's Artifacts section. This is a debug APK, not a signed production release. The digest above is the GitHub artifact digest, not a separately calculated APK-file checksum.
+- PR #19 head: `93153968b8895e35379c675b9a7ef80f3cac8cad`
+- Base: PR #8 head `3fe6267265b7012fd03b851f38bd47a93f5c064b`
+- Workflow run: [42458567609](https://github.com/duyhyundaithaibinh-max/Smartstock-Pro/actions/runs/42458567609)
+- Backend pytest: success; **142 passed, 1 warning**.
+- Flutter Analyze: success.
+- Flutter tests: **1 passed**.
+- Android debug APK build: success.
+- Artifact upload: success.
+- Artifact: [smartstock-pro-debug-apk](https://github.com/duyhyundaithaibinh-max/Smartstock-Pro/actions/runs/42458567609/artifacts/13608782312), ID `13608782312`, size 75,930,465 bytes.
+- Artifact ZIP SHA-256: `1f369364f888b30426b1d80b3bdb27b30fc1919ae864993f784845ae9afa6c71`.
+- This is a debug APK, not a signed production release.
 
-## QA fixes included in the verified branch head
+## Bootstrap secret implementation and operational checks
 
-- Corrected the Unicode word-token regex in `backend/app/offline_model_evaluation.py` to `r"[^\W_]+"` with Unicode semantics, so Vietnamese words are tokenized separately.
-- Added regression coverage: comparing “Sóng 3 tăng mạnh” with “Sóng 3 giảm mạnh” yields token precision, recall and F1 of 0.75.
-- Tightened `example_id` validation to reject booleans (Python's `bool` is a subclass of `int`).
-- The backend pytest job passed on the exact commit above.
+- `backend/scripts/show_bootstrap_secret.py` and `backend/scripts/__init__.py` exist; Dockerfile copies `scripts` into `/app`; Compose sets `SMARTSTOCK_BOOTSTRAP_SECRET_FILE=/data/bootstrap.secret` on persistent volume `/data`.
+- Documented command: `docker compose exec api python -m scripts.show_bootstrap_secret`; direct backend command: `cd backend && python -m scripts.show_bootstrap_secret`.
+- Source/package path and container working directory were verified. The command has **not** yet been executed on the actual deployment host.
+- Secret is generated once, file mode 0600 on POSIX, digest-only in SQLite, single-use, removed after successful owner creation; replay remains blocked by the SQLite consumed marker.
+- Android PR #19 adds a hidden field, validates 32–256 characters, sends `bootstrap_secret`, handles 403/422, clears controller after successful setup and disposes controller. Review found no secret persistence or logging in that diff.
+- Transport: bootstrap only over HTTPS or trusted isolated administration network. HTTP on untrusted Wi-Fi/LAN can expose the secret in transit. No TLS/reverse proxy or rate limiting is supplied by the current Compose configuration.
 
-## Security review — bootstrap risk requiring coordinator decision
+## Not verified / remaining acceptance work
 
-- `POST /api/v1/auth/register-first-owner` is unauthenticated until the first owner is created.
-- `docker-compose.yml` publishes `8000:8000`, and the Dockerfile starts Uvicorn on `0.0.0.0:8000`.
-- There is no one-time bootstrap secret or local-origin restriction.
-- A LAN client could race to register the first owner if the service is reachable before legitimate setup.
-- This is a setup-time account-takeover risk for LAN deployment. It is not a CI failure, but should be mitigated before LAN use.
-- Suggested choices: one-time local bootstrap secret, or loopback-only default binding plus an explicit protected LAN procedure. The choice affects Android device connectivity, so Chat 4 has not changed it unilaterally.
-- Related review comment is recorded on PR #8.
+1. Physical Android device smoke test for first-owner setup, login/logout and Training Room calls.
+2. Trusted LAN connectivity and deployment-host execution of `show_bootstrap_secret`.
+3. SQLite backup/restore and upgrade behavior on a copied production-like database.
+4. Release signing, TLS/reverse proxy, rate limiting and public-Internet hardening.
+5. No model training/fine-tuning is verified; current evaluator scores supplied local predictions only.
 
-## Not verified / hand off
-
-1. Install and smoke-test on a physical Android device; CI only builds the debug APK.
-2. Verify backend URL/network connectivity on the intended deployment device and trusted LAN.
-3. Verify first-owner registration/login/logout end-to-end against a persistent local SQLite database after the bootstrap exposure is mitigated.
-4. Exercise watchlist, knowledge upload/search, Training Room and evaluation APIs end-to-end from the Android UI.
-5. Test SQLite backup/restore and upgrade behavior before distributing user data.
-6. No release signing, Play Store package, TLS, rate limiting, public-Internet hardening, or multi-user authorization is included.
-7. No model training/fine-tuning is verified. Current training work prepares supervised examples and local evaluation only.
-
-## PR-chain warning for coordinator
-
-PR #3 is merged. PR #4 and PR #5 are closed without merge. PR #6 remains open and is based on `codex-free/sp-017-indicator-signature`; PR #8 remains open/draft and is based on `codex-free/sp-018-training-dataset`. These stacked dependencies need coordinator review before any merge/retarget operation. Chat 4 did not change PR bases or merge any PR.
-
-## Chat 4 completion boundary
-
-CI verification and debug APK artifact creation are complete for exact commit `a5598cd97fe3deefa5e4c5b0b47af836fb680451`. Remaining items are integration/device/release checks and the bootstrap security decision. Re-run CI after any backend, mobile, or workflow source change.
+A green CI run does not satisfy physical-device, deployment-host, backup/restore or release acceptance.
