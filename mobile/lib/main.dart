@@ -74,8 +74,6 @@ class _DashboardPageState extends State<DashboardPage> {
   String get _baseUrl =>
       _urlController.text.trim().replaceAll(RegExp(r'/$'), '');
 
-  Map<String, String> get _authHeaders => apiAuthHeaders(_accessToken ?? '');
-
   void _expireSession(String token) {
     if (!mounted || token.isEmpty || token != _accessToken || _sessionExpired) return;
     _sessionExpired = true;
