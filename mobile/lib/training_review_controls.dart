@@ -1,3 +1,5 @@
+// ignore_for_file: prefer_interpolation_to_compose_strings
+
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -159,6 +161,7 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
     var finished = false;
     try {
       while (!finished && mounted && !_sessionExpired) {
+        if (!mounted || _sessionExpired) break;
         final draft = await showDialog<Map<String, dynamic>>(context: context,
           barrierDismissible: false, builder: (dialogContext) => AlertDialog(
             title: Text('Sửa ví dụ #' + id.toString() + ' • revision ' + revision.toString()),
@@ -290,7 +293,7 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(labelText: 'Điểm nguyên 0–100', errorText: validation,
                   border: const OutlineInputBorder())),
-              DropdownButtonFormField<String>(value: rubric,
+              DropdownButtonFormField<String>(initialValue: rubric,
                 decoration: const InputDecoration(labelText: 'Rubric', border: OutlineInputBorder()),
                 items: const [DropdownMenuItem(value: 'qa-quality-v1', child: Text('qa-quality-v1'))],
                 onChanged: (value) { if (value != null) refresh(() => rubric = value); }),
@@ -351,12 +354,14 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
           qualityPage is! Map<String, dynamic> || qualityPage['items'] is! List) {
         throw const SafeApiException('Dữ liệu lịch sử review không hợp lệ.');
       }
+      if (!mounted || _sessionExpired) return;
       final events = List<dynamic>.from(page['items'] as List);
       final quality = qualityPage['items'] as List;
       var total = page['total'] as int;
       final limit = page['limit'] as int;
       var loadingMore = false;
       var historyError = '';
+      if (!mounted || _sessionExpired) return;
       await showDialog<void>(context: context, builder: (dialogContext) =>
         StatefulBuilder(builder: (context, refresh) => AlertDialog(
           title: Text('Lịch sử review • ví dụ #' + id.toString()),
