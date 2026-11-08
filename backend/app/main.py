@@ -10,6 +10,7 @@ from .db import init_db
 from .routers.market import router as market_router
 from .routers.auth import router as auth_router
 from .routers.training_eval import router as training_eval_router
+from .routers.training_review import router as training_review_router
 
 
 def api_token_is_valid(authorization: str | None, expected_token: str) -> bool:
@@ -49,6 +50,7 @@ app = FastAPI(
 app.include_router(market_router)
 app.include_router(auth_router)
 app.include_router(training_eval_router)
+app.include_router(training_review_router)
 
 
 def _is_public_market_read(path: str) -> bool:
