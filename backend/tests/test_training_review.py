@@ -718,5 +718,25 @@ class TrainingReviewApiTests(unittest.TestCase):
         conn.close()
 
 
+    def test_legacy_shared_token_approval_is_compatible_and_audited(self):
+        legacy = "legacy-training-review-token-" + "a" * 40
+        with TestClient(app) as client:
+            example = self._create(client)
+            with patch.dict(os.environ, {"SMARTSTOCK_API_TOKEN": legacy}):
+                response = client.post(
+                    f"/api/v1/training/examples/{example['id']}/approve",
+                    headers={"Authorization": f"Bearer {legacy}"},
+                )
+            self.assertEqual(response.status_code, 200, response.text)
+            history = client.get(
+                f"/api/v1/training/examples/{example['id']}/review-events",
+                headers=self.headers,
+            )
+            self.assertEqual(history.status_code, 200)
+            event = history.json()["items"][0]
+            self.assertIsNone(event["reviewer_user_id"])
+            self.assertEqual(event["reviewer_label"], "Legacy shared token")
+
+
 if __name__ == "__main__":
     unittest.main()
