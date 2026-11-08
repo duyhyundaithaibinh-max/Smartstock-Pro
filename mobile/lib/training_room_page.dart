@@ -231,6 +231,12 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     final source = item['source']?.toString() ?? 'Nguồn chưa khai báo';
     final text = item['text']?.toString() ?? '';
     final score = item['score'];
+    final chunkIndex = item['chunk_index'];
+    final charStart = item['char_start'];
+    final charEnd = item['char_end'];
+    final sourceLocator = chunkIndex is int && charStart is int && charEnd is int
+        ? 'Đoạn $chunkIndex • Ký tự $charStart–$charEnd'
+        : 'Chưa có tọa độ đoạn nguồn';
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -241,6 +247,14 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                 style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 5),
             Text('Nhóm: ${_categoryLabel(item['category']?.toString())} • Nguồn: $source • Điểm khớp: ${score is num ? score.toStringAsFixed(3) : '—'}'),
+            const SizedBox(height: 4),
+            Text(
+              sourceLocator,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.secondary,
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
             const SizedBox(height: 8),
             SelectableText(text),
             const Divider(height: 18),
