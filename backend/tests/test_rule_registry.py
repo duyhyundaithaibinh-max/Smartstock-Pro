@@ -124,5 +124,32 @@ class RuleRegistryTests(unittest.TestCase):
                     rule_registry.create_version(f"2.0.{index}", "Invalid", "", config)
 
 
+    def test_activation_history_paginates_newest_first_and_reports_total(self):
+        rule_registry.create_version(
+            "1.1.0", "Volume window experiment", "Draft",
+            {"volume_flow": {"window": 15}},
+        )
+        rule_registry.activate_version("1.1.0")
+        rule_registry.create_version(
+            "1.2.0", "EMA experiment", "Draft",
+            {"indicators": {"ema_fast_period": 10, "ema_slow_period": 40}},
+        )
+        rule_registry.activate_version("1.2.0")
+
+        first_page = rule_registry.list_activation_history(limit=2, offset=0)
+        second_page = rule_registry.list_activation_history(limit=2, offset=2)
+
+        self.assertEqual(first_page["total"], 3)
+        self.assertEqual([item["version"] for item in first_page["items"]], ["1.2.0", "1.1.0"])
+        self.assertEqual([item["version"] for item in second_page["items"]], ["1.0.0"])
+        self.assertEqual(second_page["total"], first_page["total"])
+
+    def test_activation_history_rejects_invalid_pagination(self):
+        for limit, offset in ((0, 0), (501, 0), (1, -1)):
+            with self.subTest(limit=limit, offset=offset):
+                with self.assertRaises(ValueError):
+                    rule_registry.list_activation_history(limit=limit, offset=offset)
+
+
 if __name__ == "__main__":
     unittest.main()
