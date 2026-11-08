@@ -139,7 +139,7 @@ class _DashboardPageState extends State<DashboardPage> {
             Uri.parse('$_baseUrl/api/v1/watchlist').replace(
               queryParameters: {'symbol': symbol},
             ),
-            headers: apiAuthHeaders(_tokenController.text),
+            headers: _authHeaders,
           )
           .timeout(const Duration(seconds: 12));
       if (watchlistResponse.statusCode != 201 &&
@@ -543,7 +543,7 @@ class _DashboardPageState extends State<DashboardPage> {
       final watchlistResponse = await http
           .get(
             Uri.parse('$_baseUrl/api/v1/watchlist'),
-            headers: apiAuthHeaders(_tokenController.text),
+            headers: _authHeaders,
           )
           .timeout(const Duration(seconds: 8));
       if (watchlistResponse.statusCode != 200) {
@@ -582,7 +582,7 @@ class _DashboardPageState extends State<DashboardPage> {
     try {
       final headers = <String, String>{
         'Content-Type': 'application/json',
-        ...apiAuthHeaders(_tokenController.text),
+        ..._authHeaders,
       };
       final createResponse = await http
           .post(
@@ -607,7 +607,7 @@ class _DashboardPageState extends State<DashboardPage> {
             Uri.parse('$_baseUrl/api/v1/watchlist').replace(
               queryParameters: {'symbol': symbol},
             ),
-            headers: apiAuthHeaders(_tokenController.text),
+            headers: _authHeaders,
           )
           .timeout(const Duration(seconds: 12));
       if (watchlistResponse.statusCode != 201 &&
@@ -645,7 +645,7 @@ class _DashboardPageState extends State<DashboardPage> {
         builder: (_) => ChartPage(
           baseUrl: _baseUrl,
           symbol: symbol,
-          apiToken: _tokenController.text.trim(),
+          apiToken: _accessToken ?? '',
         ),
       ),
     );
@@ -656,7 +656,7 @@ class _DashboardPageState extends State<DashboardPage> {
       MaterialPageRoute<void>(
         builder: (_) => TrainingRoomPage(
           baseUrl: _baseUrl,
-          apiToken: _tokenController.text.trim(),
+          apiToken: _accessToken ?? '',
         ),
       ),
     );
@@ -665,7 +665,7 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   void dispose() {
     _urlController.dispose();
-    _tokenController.dispose();
+
     _symbolController.dispose();
     _nameController.dispose();
     super.dispose();
@@ -700,18 +700,6 @@ class _DashboardPageState extends State<DashboardPage> {
                         border: OutlineInputBorder(),
                       ),
                       keyboardType: TextInputType.url,
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _tokenController,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: 'API Bearer Token (nếu backend bật bảo vệ)',
-                        helperText:
-                            'Để trống khi chạy local ở chế độ phát triển.',
-                        border: OutlineInputBorder(),
-                      ),
-                      autocorrect: false,
                     ),
                     const SizedBox(height: 10),
                     SizedBox(
