@@ -59,7 +59,7 @@ def edit_training_example(example_id: int, payload: EditPayload, request: Reques
     try:
         result = training_room.edit_draft_example(
             example_id,
-            payload.model_dump(exclude={"expected_revision"}, exclude_unset=True),
+            payload.model_dump(exclude_unset=True),
             _reviewer_id(request),
         )
     except training_room.TrainingConflictError as exc:
