@@ -39,7 +39,8 @@ def _citation_exists(conn: Any, citation: str) -> bool:
     ).fetchone() is not None
 
 
-def _validate_citations(citations: Any) -> list[str]:
+def _validate_citations(conn: Any, citations: Any) -> list[str]:
+    """Validate every citation using the caller's transaction/connection."""
     if not isinstance(citations, list) or not 1 <= len(citations) <= 10:
         raise TrainingDataError("Provide 1 to 10 source citation IDs.")
     clean: list[str] = []
@@ -48,9 +49,7 @@ def _validate_citations(citations: Any) -> list[str]:
             raise TrainingDataError("Citation IDs must use the kb:document_id:chunk_index format.")
         if citation in clean:
             raise TrainingDataError("Duplicate citation IDs are not allowed.")
-        with connection() as conn:
-            exists = _citation_exists(conn, citation)
-        if not exists:
+        if not _citation_exists(conn, citation):
             raise TrainingDataError(f"Source citation does not exist: {citation}")
         clean.append(citation)
     return clean
@@ -60,8 +59,8 @@ def create_example(payload: dict[str, Any]) -> dict[str, Any]:
     question = _clean_text(payload.get("question"), "Question", 10, 1000)
     answer = _clean_text(payload.get("expected_answer"), "Expected answer", 20, 5000)
     topic = _clean_text(payload.get("topic", "general"), "Topic", 1, 80)
-    citations = _validate_citations(payload.get("citation_ids"))
     with connection() as conn:
+        citations = _validate_citations(conn, payload.get("citation_ids"))
         cursor = conn.execute(
             """INSERT INTO training_examples
                (question,expected_answer,topic,citation_ids,status)
