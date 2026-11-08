@@ -222,6 +222,28 @@ def get_document(document_id: int, include_chunks: bool = True) -> dict | None:
     return result
 
 
+
+def get_citation(document_id: int, chunk_index: int) -> dict | None:
+    """Resolve a stable knowledge citation to its exact stored source chunk."""
+    if document_id < 1 or chunk_index < 0:
+        return None
+    with connection() as conn:
+        row = conn.execute(
+            """SELECT d.id AS document_id,d.filename,d.title,d.mime_type,d.source,
+                      d.category,d.content_sha256,d.created_at,
+                      c.id AS chunk_id,c.chunk_index,c.content,c.char_start,c.char_end
+               FROM knowledge_documents d
+               JOIN knowledge_chunks c ON c.document_id=d.id
+               WHERE d.id=? AND c.chunk_index=?""",
+            (document_id, chunk_index),
+        ).fetchone()
+    if row is None:
+        return None
+    result = dict(row)
+    result["citation_id"] = f"kb:{result['document_id']}:{result['chunk_index']}"
+    return result
+
+
 def delete_document(document_id: int) -> bool:
     with connection() as conn:
         cursor = conn.execute("DELETE FROM knowledge_documents WHERE id=?", (document_id,))
