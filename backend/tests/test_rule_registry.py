@@ -42,6 +42,36 @@ class RuleRegistryTests(unittest.TestCase):
         self.assertEqual(history["1.0.0"], "archived")
         self.assertEqual(history["1.1.0"], "active")
 
+    def test_activation_history_is_append_only_and_records_previous_version(self):
+        baseline = rule_registry.get_active_version()
+        initial = rule_registry.list_activation_history()
+        self.assertEqual(initial["total"], 1)
+        self.assertEqual(initial["items"][0]["version"], "1.0.0")
+        self.assertIsNone(initial["items"][0]["previous_version"])
+
+        rule_registry.create_version(
+            "1.1.0", "Volume window experiment", "Draft",
+            {"volume_flow": {"window": 15}},
+        )
+        rule_registry.activate_version("1.1.0")
+        after_first_activation = rule_registry.list_activation_history()
+        self.assertEqual(after_first_activation["total"], 2)
+        latest = after_first_activation["items"][0]
+        self.assertEqual(latest["version"], "1.1.0")
+        self.assertEqual(latest["previous_version"], baseline["version"])
+        self.assertEqual(latest["config_sha256"], rule_registry.get_active_version()["config_sha256"])
+
+        # Activating the already-active version is idempotent, not a new event.
+        rule_registry.activate_version("1.1.0")
+        self.assertEqual(rule_registry.list_activation_history()["total"], 2)
+
+        rule_registry.activate_version("1.0.0")
+        history = rule_registry.list_activation_history()
+        self.assertEqual(history["total"], 3)
+        self.assertEqual(history["items"][0]["version"], "1.0.0")
+        self.assertEqual(history["items"][0]["previous_version"], "1.1.0")
+        self.assertEqual(history["items"][1]["version"], "1.1.0")
+
     def test_unknown_version_cannot_be_activated(self):
         with self.assertRaises(KeyError):
             rule_registry.activate_version("9.9.9")
