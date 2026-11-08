@@ -106,7 +106,7 @@ def _migrate_training_review(conn: sqlite3.Connection) -> None:
             conn.execute("DROP TABLE training_example_review_events_old")
     conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_training_review_events_example
-        ON training_example_review_events(example_id, created_at, id)
+        ON training_example_review_events(example_id, id)
     """)
     conn.execute("""
         CREATE TRIGGER IF NOT EXISTS trg_training_review_events_no_update
