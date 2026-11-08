@@ -130,6 +130,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         }),
       ).timeout(const Duration(seconds: 20));
       if (response.statusCode != 201) throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      if (!mounted) return;
       _trainingQuestionController.clear();
       _trainingAnswerController.clear();
       _trainingCitationsController.clear();
@@ -277,7 +278,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         type: FileType.custom,
         allowedExtensions: const ['txt', 'md', 'csv', 'pdf'],
       );
-      if (file == null) return;
+      if (!mounted || file == null) return;
       final fileLength = file.lengthSync() ?? await file.length();
       if (fileLength == null || fileLength <= 0) {
         throw Exception('Không đọc được kích thước tệp trên thiết bị.');
@@ -286,6 +287,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         throw Exception('Tệp vượt quá giới hạn 10 MB.');
       }
       final bytes = await file.readAsBytes();
+      if (!mounted) return;
       if (bytes.isEmpty) {
         throw Exception('Không đọc được nội dung tệp trên thiết bị.');
       }
