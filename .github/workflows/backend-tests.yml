@@ -36,6 +36,17 @@ jobs:
       - name: Generate Android platform files
         working-directory: mobile
         run: flutter create --platforms=android .
+      - name: Allow local HTTP only in debug builds
+        working-directory: mobile
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p android/app/src/debug
+          cat > android/app/src/debug/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application android:usesCleartextTraffic="true" />
+          </manifest>
+          EOF
       - name: Set Android compile SDK
         working-directory: mobile
         shell: bash
