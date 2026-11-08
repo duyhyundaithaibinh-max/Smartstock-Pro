@@ -221,7 +221,7 @@ void main() {
     await tester.tap(find.text('FPT'));
     await tester.pumpAndSettle();
     expect(find.text('chart-probe:FPT:$_token'), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.arrow_back));
+    Navigator.of(tester.element(find.text('chart-probe:FPT:$_token'))).pop();
     await tester.pumpAndSettle();
 
     await tester.scrollUntilVisible(
