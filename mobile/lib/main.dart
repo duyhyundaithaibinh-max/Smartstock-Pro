@@ -199,7 +199,7 @@ class _DashboardPageState extends State<DashboardPage> {
             Uri.parse('$_baseUrl/api/v1/watchlist').replace(
               queryParameters: {'symbol': symbol},
             ),
-            headers: apiAuthHeaders(_tokenController.text),
+            headers: _authHeaders
           )
           .timeout(const Duration(seconds: 12));
       if (watchlistResponse.statusCode != 201 &&
