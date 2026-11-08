@@ -74,6 +74,15 @@ def test_offline_evaluation_rejects_unapproved_examples(reviewed_example):
         }])
 
 
+def test_offline_evaluation_rejects_boolean_example_id():
+    with pytest.raises(ValueError, match="positive integer"):
+        offline_model_evaluation.evaluate_predictions([{
+            "example_id": True,
+            "answer": "A valid-looking answer string.",
+            "citation_ids": [],
+        }])
+
+
 def test_offline_evaluation_requires_predictions():
     with pytest.raises(ValueError, match="non-empty"):
         offline_model_evaluation.evaluate_predictions([])
