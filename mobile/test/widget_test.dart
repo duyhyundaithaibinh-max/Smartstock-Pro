@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:smartstock_pro/api_auth.dart';
-import 'package:smartstock_pro/main.dart';
+import 'package:smartstock_pro/main.dart' show SmartStockApp;
 
 void main() {
   testWidgets('dashboard renders SmartStock Pro', (tester) async {
