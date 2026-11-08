@@ -2,7 +2,7 @@ import csv
 import io
 from typing import Annotated
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Body
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Body, Request
 from pydantic import ValidationError
 from ..db import connection
 from ..schemas import SymbolCreate, Candle
@@ -508,10 +508,14 @@ def create_training_example(payload: dict = Body(...)):
         raise HTTPException(422, str(exc)) from exc
 
 @router.post("/training/examples/{example_id}/approve")
-def approve_training_example(example_id: int):
-    """Human-approve an example only while all cited source chunks still exist."""
+def approve_training_example(example_id: int, request: Request):
+    """Approve a draft and atomically append an owner-attributed audit event."""
+    user = getattr(request.state, "user", None) or {}
+    reviewer_id = user.get("id")
+    if type(reviewer_id) is not int or reviewer_id <= 0:
+        raise HTTPException(403, "Human approval requires an authenticated owner session.")
     try:
-        result = training_room.approve_example(example_id)
+        result = training_room.approve_example(example_id, reviewer_id)
     except training_room.TrainingConflictError as exc:
         raise HTTPException(409, str(exc)) from exc
     except training_room.TrainingDataError as exc:
