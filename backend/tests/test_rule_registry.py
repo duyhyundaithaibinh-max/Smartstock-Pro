@@ -72,6 +72,19 @@ class RuleRegistryTests(unittest.TestCase):
         self.assertEqual(history["items"][0]["previous_version"], "1.1.0")
         self.assertEqual(history["items"][1]["version"], "1.1.0")
 
+    def test_activation_history_rejects_update_and_delete(self):
+        rule_registry.get_active_version()
+        import sqlite3
+
+        with self.assertRaises(sqlite3.IntegrityError):
+            with db.connection() as conn:
+                conn.execute(
+                    "UPDATE analysis_rule_activation_history SET version='9.9.9' WHERE id=1"
+                )
+        with self.assertRaises(sqlite3.IntegrityError):
+            with db.connection() as conn:
+                conn.execute("DELETE FROM analysis_rule_activation_history WHERE id=1")
+
     def test_unknown_version_cannot_be_activated(self):
         with self.assertRaises(KeyError):
             rule_registry.activate_version("9.9.9")
