@@ -491,7 +491,7 @@ def search_knowledge_documents(
 def list_training_examples(
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
-    status: Annotated[str | None, Query(pattern="^(draft|approved)$")] = None,
+    status: Annotated[str | None, Query(pattern="^(draft|approved|rejected)$")] = None,
 ):
     """List supervised examples prepared for human review."""
     try:
