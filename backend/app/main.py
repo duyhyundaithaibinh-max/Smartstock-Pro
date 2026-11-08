@@ -42,6 +42,7 @@ def _is_public_market_read(path: str) -> bool:
         "/api/v1/analysis/fibonacci",
         "/api/v1/analysis/elliott",
         "/api/v1/analysis/volume-flow",
+        "/api/v1/analysis/report",
     }:
         return True
     return False
