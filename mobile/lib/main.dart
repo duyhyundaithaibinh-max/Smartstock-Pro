@@ -39,7 +39,6 @@ class _DashboardPageState extends State<DashboardPage> {
   final TextEditingController _urlController =
       TextEditingController(text: 'http://10.0.2.2:8000');
   final TextEditingController _tokenController = TextEditingController();
-
   final TextEditingController _symbolController = TextEditingController();
   final TextEditingController _nameController = TextEditingController();
 
@@ -91,11 +90,11 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
+
   Future<void> _createAndAddSymbol() async {
     final symbol = _symbolController.text.trim().toUpperCase();
     final name = _nameController.text.trim();
-    if (!RegExp(r'^[A-Z0-9.]{3,12}
-    Navigator.of(context).push(
+    if (!RegExp(r'^[A-Z0-9.]{3,12}    Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => ChartPage(baseUrl: _baseUrl, symbol: symbol, apiToken: _tokenController.text.trim()),
       ),
@@ -207,6 +206,7 @@ class _DashboardPageState extends State<DashboardPage> {
             Text('Danh sách theo dõi',
                 style: theme.textTheme.titleLarge),
             const SizedBox(height: 8),
+
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),
@@ -234,7 +234,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
-                      value: _exchange,
+                      initialValue: _exchange,
                       decoration: const InputDecoration(
                         labelText: 'Sàn giao dịch',
                         border: OutlineInputBorder(),
@@ -342,8 +342,6 @@ class _DashboardPageState extends State<DashboardPage> {
             }),
           )
           .timeout(const Duration(seconds: 12));
-
-      // A 409 means the symbol already exists; it can still be added to this watchlist.
       if (createResponse.statusCode != 201 && createResponse.statusCode != 409) {
         throw Exception('Không tạo được mã: HTTP ${createResponse.statusCode} ${createResponse.body}');
       }
@@ -356,7 +354,7 @@ class _DashboardPageState extends State<DashboardPage> {
             headers: apiAuthHeaders(_tokenController.text),
           )
           .timeout(const Duration(seconds: 12));
-      if (watchlistResponse.statusCode != 201) {
+      if (watchlistResponse.statusCode != 201 && watchlistResponse.statusCode != 409) {
         throw Exception('Không thêm được vào watchlist: HTTP ${watchlistResponse.statusCode} ${watchlistResponse.body}');
       }
 
