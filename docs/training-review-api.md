@@ -1,6 +1,6 @@
 # Training Review API contract (SP-022)
 
-All routes below require an authenticated owner Bearer session. A missing/invalid token returns 401. A legacy SMARTSTOCK_API_TOKEN principal is not a human reviewer and receives 403 on review operations. The server derives reviewer_user_id from the owner session; clients must not send it.
+Review, edit, quality and history routes require an authenticated owner Bearer session. A missing/invalid token returns 401. A legacy SMARTSTOCK_API_TOKEN principal receives 403 on reject/edit/quality/history routes. The existing approve route deliberately retains its legacy shared-token compatibility; audit attribution is reviewer_user_id=null and reviewer_label=Legacy shared token for that path. Owner approval records the owner ID and Owner label. Clients must never send reviewer_user_id.
 
 ## Existing example lifecycle
 
@@ -29,7 +29,7 @@ GET /api/v1/training/examples/{id}/review-events?limit=50&offset=0
 - Empty history returns 200 with items: [] and total: 0.
 - Missing example returns 404; missing/invalid owner token 401; legacy shared token 403; invalid pagination 422.
 - Event actions: approved, rejected, edited.
-- reviewer_user_id is the server-authenticated owner ID; reviewer_label is the non-identifying single-owner label Owner.
+- reviewer_user_id is the server-authenticated owner ID when an owner session is used; reviewer_label is Owner. For the retained legacy approval path, the ID is null and the label is Legacy shared token. Direct internal service calls use System. No client-supplied reviewer identity is accepted.
 - changed_fields is an array; approval/rejection use an empty array.
 - The API never returns session tokens, password material, bootstrap secrets or account credentials.
 - Events are append-only while the parent example exists. Hard deletion cascades event rows by the explicitly retained MVP-1 policy.
