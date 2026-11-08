@@ -5,12 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
+import 'api_auth.dart';
+
 /// Local knowledge retrieval and document management.
 /// Search results are source passages, not AI-generated answers.
 class TrainingRoomPage extends StatefulWidget {
-  const TrainingRoomPage({super.key, required this.baseUrl});
+  const TrainingRoomPage({super.key, required this.baseUrl, this.apiToken = ''});
 
   final String baseUrl;
+  final String apiToken;
 
   @override
   State<TrainingRoomPage> createState() => _TrainingRoomPageState();
@@ -57,7 +60,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         'limit': '100',
         'offset': '0',
         if (_categoryFilter != 'all') 'category': _categoryFilter,
-      })).timeout(const Duration(seconds: 20));
+      }), headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
         throw Exception('Backend trả về HTTP ${response.statusCode}');
       }
@@ -160,6 +163,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     try {
       final response = await http.delete(
         _uri('/api/v1/knowledge/documents/$id'),
+        headers: apiAuthHeaders(widget.apiToken),
       ).timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
         throw Exception('Backend trả về HTTP ${response.statusCode}');
@@ -195,6 +199,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
           'top_k': '8',
           if (_categoryFilter != 'all') 'category': _categoryFilter,
         }),
+        headers: apiAuthHeaders(widget.apiToken),
       ).timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
         throw Exception('Backend trả về HTTP ${response.statusCode}: ${response.body}');
