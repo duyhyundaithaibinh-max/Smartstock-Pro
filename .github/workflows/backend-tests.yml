@@ -1,9 +1,15 @@
 name: SmartStock Pro CI
 on:
   push:
+    branches: [main]
     paths: ["backend/**", "mobile/**", "docker-compose.yml", ".github/workflows/**"]
   pull_request:
+    branches: [main]
     paths: ["backend/**", "mobile/**", "docker-compose.yml", ".github/workflows/**"]
+concurrency:
+  group: smartstock-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
 jobs:
   backend:
     runs-on: ubuntu-latest
@@ -14,16 +20,44 @@ jobs:
           python-version: "3.12"
       - run: pip install -r backend/requirements.txt pytest
       - run: cd backend && pytest
+
   android:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+      - name: Set up Android SDK command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-36"
       - name: Generate Android platform files
         working-directory: mobile
         run: flutter create --platforms=android .
+      - name: Allow local HTTP only in debug builds
+        working-directory: mobile
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p android/app/src/debug
+          cat > android/app/src/debug/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application android:usesCleartextTraffic="true" />
+          </manifest>
+          EOF
+      - name: Set Android compile SDK
+        working-directory: mobile
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$SDK_ROOT" ]; then
+            echo "Android SDK root is not configured."
+            exit 1
+          fi
+          sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' android/app/build.gradle.kts
       - name: Resolve Flutter dependencies
         working-directory: mobile
         run: flutter pub get
@@ -33,9 +67,22 @@ jobs:
       - name: Run Flutter tests
         working-directory: mobile
         run: flutter test
-      - name: Build debug APK
+      - name: Build debug APK (retry transient Gradle repository failures)
         working-directory: mobile
-        run: flutter build apk --debug
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            echo "Android APK build attempt $attempt/3"
+            if flutter build apk --debug; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Build failed; waiting 20 seconds before retrying dependency resolution."
+              sleep 20
+            fi
+          done
+          echo "APK build failed after 3 attempts."
+          exit 1
       - uses: actions/upload-artifact@v4
         with:
           name: smartstock-pro-debug-apk
