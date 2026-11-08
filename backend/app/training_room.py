@@ -350,7 +350,7 @@ def list_review_events(example_id: int, limit: int = 50, offset: int = 0) -> dic
         ).fetchone()[0]
         rows = conn.execute("""
             SELECT id,example_id,action,reason,revision_from,revision_to,changed_fields,
-                   reviewer_user_id,created_at
+                   reviewer_user_id,reviewer_label,created_at
             FROM training_example_review_events
             WHERE example_id=?
             ORDER BY id ASC
