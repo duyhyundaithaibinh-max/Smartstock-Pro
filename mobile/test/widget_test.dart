@@ -84,38 +84,104 @@ void main() {
     existingOwnerClient.close();
   });
 
-  for (final status in [403, 422]) {
-    testWidgets('bootstrap HTTP $status shows safe error without response body',
-        (tester) async {
-      final client = MockClient((request) async {
-        if (request.url.path.endsWith('/auth/status')) {
-          return _json(200, {'owner_initialized': false});
-        }
-        if (request.url.path.endsWith('/register-first-owner')) {
-          return http.Response(
-            'LEAKED-SECRET-$_secret-LEAKED-PASSWORD-$_password',
-            status,
-          );
-        }
-        fail('Unexpected request: ${request.method} ${request.url}');
-      });
-      await _pumpDashboard(tester, client);
-      await tester.enterText(find.byKey(const ValueKey('username')), 'owner');
-      await tester.enterText(find.byKey(const ValueKey('password')), _password);
-      await tester.enterText(
-          find.byKey(const ValueKey('bootstrap-secret')), _secret);
-      await tester.tap(find.byKey(const ValueKey('auth-submit')));
-      await tester.pumpAndSettle();
-
-      expect(find.textContaining('LEAKED-SECRET'), findsNothing);
-      expect(find.textContaining('LEAKED-PASSWORD'), findsNothing);
-      expect(find.textContaining(status == 403
-          ? 'Bootstrap secret không đúng hoặc đã được sử dụng.'
-          : 'Bootstrap secret chưa hợp lệ (32–256 ký tự).'), findsOneWidget);
-      await tester.pumpWidget(const SizedBox.shrink());
-      client.close();
+  testWidgets('bootstrap HTTP 403 shows safe secret error without response body',
+      (tester) async {
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('/auth/status')) {
+        return _json(200, {'owner_initialized': false});
+      }
+      if (request.url.path.endsWith('/register-first-owner')) {
+        return http.Response(
+          'LEAKED-SECRET-$_secret-LEAKED-PASSWORD-$_password',
+          403,
+        );
+      }
+      fail('Unexpected request: ${request.method} ${request.url}');
     });
-  }
+    await _pumpDashboard(tester, client);
+    await tester.enterText(find.byKey(const ValueKey('username')), 'owner');
+    await tester.enterText(find.byKey(const ValueKey('password')), _password);
+    await tester.enterText(
+        find.byKey(const ValueKey('bootstrap-secret')), _secret);
+    await tester.tap(find.byKey(const ValueKey('auth-submit')));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('LEAKED-SECRET'), findsNothing);
+    expect(find.textContaining('LEAKED-PASSWORD'), findsNothing);
+    expect(find.textContaining(
+      'Bootstrap secret không đúng hoặc đã được sử dụng.',
+    ), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('bootstrap HTTP 422 validation shows generic safe error',
+      (tester) async {
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('/auth/status')) {
+        return _json(200, {'owner_initialized': false});
+      }
+      if (request.url.path.endsWith('/register-first-owner')) {
+        return _json(422, {
+          'detail':
+              'username/password validation failed: LEAKED-USERNAME-$_password-$_secret',
+        });
+      }
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+    await _pumpDashboard(tester, client);
+    await tester.enterText(find.byKey(const ValueKey('username')), 'owner');
+    await tester.enterText(find.byKey(const ValueKey('password')), _password);
+    await tester.enterText(
+        find.byKey(const ValueKey('bootstrap-secret')), _secret);
+    await tester.tap(find.byKey(const ValueKey('auth-submit')));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Thông tin khởi tạo chưa hợp lệ.'),
+        findsOneWidget);
+    expect(find.textContaining('LEAKED-USERNAME'), findsNothing);
+    expect(find.textContaining('LEAKED-PASSWORD'), findsNothing);
+    expect(find.textContaining(_secret), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('bootstrap HTTP 409 switches to owner login with safe guidance',
+      (tester) async {
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('/auth/status')) {
+        return _json(200, {'owner_initialized': false});
+      }
+      if (request.url.path.endsWith('/register-first-owner')) {
+        return http.Response(
+          'OWNER-CONFLICT-LEAKED-SECRET-$_secret-LEAKED-PASSWORD-$_password',
+          409,
+        );
+      }
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+    await _pumpDashboard(tester, client);
+    await tester.enterText(find.byKey(const ValueKey('username')), 'owner');
+    await tester.enterText(find.byKey(const ValueKey('password')), _password);
+    await tester.enterText(
+        find.byKey(const ValueKey('bootstrap-secret')), _secret);
+    await tester.tap(find.byKey(const ValueKey('auth-submit')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('bootstrap-secret')), findsNothing);
+    expect(find.text('Đăng nhập chủ sở hữu'), findsOneWidget);
+    expect(
+      find.textContaining(
+        'Tài khoản chủ sở hữu đã được khởi tạo. Hãy đăng nhập hoặc kiểm tra trạng thái backend.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('OWNER-CONFLICT-LEAKED'), findsNothing);
+    expect(find.textContaining('LEAKED-PASSWORD'), findsNothing);
+    expect(find.textContaining(_secret), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
 
   testWidgets('bootstrap success submits expected payload then logs in',
       (tester) async {
