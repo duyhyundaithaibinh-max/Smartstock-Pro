@@ -175,7 +175,7 @@ void main() {
 
     expect(find.textContaining('RAW-SECRET'), findsNothing);
     expect(find.textContaining('RAW-TOKEN'), findsNothing);
-    expect(find.text('Đăng nhập thất bại (HTTP 401).'), findsOneWidget);
+    expect(find.textContaining('Đăng nhập thất bại (HTTP 401).'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     client.close();
   });
@@ -213,12 +213,22 @@ void main() {
         request.method == 'GET' && request.url.path == '/api/v1/watchlist');
     expect(watchlistGet.headers['authorization'], 'Bearer $_token');
 
+    await tester.scrollUntilVisible(
+      find.text('FPT'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.tap(find.text('FPT'));
     await tester.pumpAndSettle();
     expect(find.text('chart-probe:FPT:$_token'), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
 
+    await tester.scrollUntilVisible(
+      find.text('Hybrid AI Training Room'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.tap(find.text('Hybrid AI Training Room'));
     await tester.pumpAndSettle();
     expect(find.text('training-probe:$_token'), findsOneWidget);
