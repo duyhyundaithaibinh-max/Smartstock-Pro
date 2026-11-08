@@ -22,19 +22,19 @@ class LocalAuthenticationTests(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_first_owner_can_be_created_only_once(self):
-        owner = auth.create_first_owner("owner_1", "a-long-test-password")
+        owner = auth.create_first_owner("owner_1", "a-long-test-password", self.bootstrap_secret)
         self.assertEqual(owner, {"username": "owner_1", "role": "owner"})
         with self.assertRaises(auth.AuthError):
-            auth.create_first_owner("owner_2", "another-long-password")
+            auth.create_first_owner("owner_2", "another-long-password", self.bootstrap_secret)
 
     def test_password_policy_and_username_validation(self):
         with self.assertRaises(auth.AuthError):
-            auth.create_first_owner("ab", "short")
+            auth.create_first_owner("ab", "short", self.bootstrap_secret)
         with self.assertRaises(auth.AuthError):
-            auth.create_first_owner("bad username", "a-long-test-password")
+            auth.create_first_owner("bad username", "a-long-test-password", self.bootstrap_secret)
 
     def test_login_returns_opaque_token_and_logout_revokes_it(self):
-        auth.create_first_owner("owner", "a-long-test-password")
+        auth.create_first_owner("owner", "a-long-test-password", self.bootstrap_secret)
         session = auth.login("owner", "a-long-test-password")
         token = session["access_token"]
         self.assertEqual(session["token_type"], "bearer")
@@ -44,14 +44,14 @@ class LocalAuthenticationTests(unittest.TestCase):
         self.assertFalse(auth.revoke(token))
 
     def test_invalid_credentials_do_not_create_session(self):
-        auth.create_first_owner("owner", "a-long-test-password")
+        auth.create_first_owner("owner", "a-long-test-password", self.bootstrap_secret)
         with self.assertRaises(auth.AuthError):
             auth.login("owner", "incorrect-password")
         with self.assertRaises(auth.AuthError):
             auth.login("missing", "incorrect-password")
 
     def test_expired_session_is_rejected(self):
-        auth.create_first_owner("owner", "a-long-test-password")
+        auth.create_first_owner("owner", "a-long-test-password", self.bootstrap_secret)
         session = auth.login("owner", "a-long-test-password")
         with db.connection() as conn:
             conn.execute(
