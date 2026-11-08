@@ -63,6 +63,25 @@ class KnowledgeBaseTests(unittest.TestCase):
         self.assertEqual(first["id"], duplicate["id"])
         self.assertEqual(knowledge_base.list_documents()["total"], 1)
 
+
+    def test_duplicate_detection_starts_inside_write_transaction(self):
+        raw = b"Concurrent knowledge base duplicate test"
+        original_execute = db.sqlite3.Connection.execute
+        observed = {"transaction_active": False}
+
+        def tracking_execute(conn, sql, parameters=()):
+            if "SELECT id, filename, title, created_at FROM knowledge_documents" in sql:
+                observed["transaction_active"] = conn.in_transaction
+            return original_execute(conn, sql, parameters)
+
+        first = knowledge_base.ingest_document("first.txt", raw)
+        with patch.object(db.sqlite3.Connection, "execute", tracking_execute):
+            duplicate = knowledge_base.ingest_document("second.txt", raw)
+
+        self.assertTrue(observed["transaction_active"])
+        self.assertEqual(duplicate["status"], "duplicate")
+        self.assertEqual(duplicate["id"], first["id"])
+
     def test_list_paginates_and_does_not_return_full_text(self):
         for index in range(3):
             knowledge_base.ingest_document(f"doc-{index}.txt", f"content {index}".encode())
