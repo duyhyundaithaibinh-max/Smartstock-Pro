@@ -397,6 +397,23 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                   },
                   icon: const Icon(Icons.content_copy, size: 18),
                 ),
+                IconButton(
+                  tooltip: 'Đưa mã trích dẫn vào biểu mẫu huấn luyện',
+                  onPressed: () {
+                    final parts = citation.split(':');
+                    if (parts.length != 3 || parts[0] != 'kb' ||
+                        int.tryParse(parts[1]) == null || int.tryParse(parts[2]) == null) return;
+                    final existing = _trainingCitationsController.text
+                        .split(',').map((value) => value.trim()).where((value) => value.isNotEmpty).toList();
+                    if (existing.contains(citation)) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Mã trích dẫn đã có trong biểu mẫu.')));
+                      return;
+                    }
+                    setState(() => _trainingCitationsController.text = [...existing, citation].join(', '));
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã thêm mã trích dẫn vào biểu mẫu.')));
+                  },
+                  icon: const Icon(Icons.playlist_add, size: 20),
+                ),
               ],
             ),
           ],
