@@ -87,13 +87,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     final topic = _trainingTopicController.text.trim();
     final citations = _trainingCitationsController.text
         .split(',').map((item) => item.trim()).where((item) => item.isNotEmpty).toList();
-    final citationPattern = RegExp(r'^kb:\d+:\d+$');
-    if (question.length < 10 || answer.length < 20 || citations.isEmpty ||
-        citations.length > 10 || citations.any((item) => !citationPattern.hasMatch(item)) ||
-        citations.toSet().length != citations.length) {
-      setState(() => _error = 'Câu hỏi tối thiểu 10 ký tự, đáp án 20 ký tự; cần 1–10 mã nguồn kb:document_id:chunk_index hợp lệ và không trùng.');
-      return;
-    }
+    final citationPattern = RegExp(r'^kb:\\d+:\\d+
     setState(() { _savingExample = true; _error = null; });
     try {
       final response = await http.post(
@@ -402,11 +396,6 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                         .toList();
                     if (!current.contains(citation)) current.add(citation);
                     _trainingCitationsController.text = current.join(', ');
-                    final category = item['category']?.toString();
-                    if (_trainingTopicController.text.trim().isEmpty &&
-                        category != null && category != 'all') {
-                      _trainingTopicController.text = category;
-                    }
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Đã thêm mã nguồn vào biểu mẫu huấn luyện')),
                     );
