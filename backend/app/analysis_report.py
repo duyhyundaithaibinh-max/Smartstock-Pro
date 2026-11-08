@@ -57,17 +57,21 @@ def build_analysis_report(candles, rule_config=None, rule_version="1.0.0", rule_
     latest_indicators = {
         "rsi": round(rsi[-1], 4) if rsi[-1] is not None else None,
         "rsi_period": rsi_period,
+        "rsi14": round(rsi[-1], 4) if rsi_period == 14 and rsi[-1] is not None else None,
         "macd": round(macd["macd"][-1], 4) if macd["macd"][-1] is not None else None,
         "macd_signal": round(macd["signal"][-1], 4) if macd["signal"][-1] is not None else None,
         "ema_fast": round(ema_fast[-1], 4) if ema_fast[-1] is not None else None,
         "ema_fast_period": ema_fast_period,
+        "ema20": round(ema_fast[-1], 4) if ema_fast_period == 20 and ema_fast[-1] is not None else None,
         "ema_slow": round(ema_slow[-1], 4) if ema_slow[-1] is not None else None,
         "ema_slow_period": ema_slow_period,
+        "ema50": round(ema_slow[-1], 4) if ema_slow_period == 50 and ema_slow[-1] is not None else None,
         "macd_fast_period": macd_fast_period,
         "macd_slow_period": macd_slow_period,
         "macd_signal_period": macd_signal_period,
         "atr": round(atr_value[-1], 4) if atr_value[-1] is not None else None,
         "atr_period": atr_period,
+        "atr14": round(atr_value[-1], 4) if atr_period == 14 and atr_value[-1] is not None else None,
     }
 
     supports = trend.get("price_zones", {}).get("supports", [])
