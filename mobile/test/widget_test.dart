@@ -341,6 +341,132 @@ void main() {
     client.close();
   });
 
+  testWidgets('protected watchlist HTTP 401 expires the active session safely',
+      (tester) async {
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('/auth/status')) {
+        return _json(200, {'owner_initialized': true});
+      }
+      if (request.url.path.endsWith('/auth/login')) {
+        return _json(200, {'access_token': _token});
+      }
+      if (request.url.path == '/health') {
+        return _json(200, {'status': 'ok', 'version': 'test'});
+      }
+      if (request.url.path == '/api/v1/watchlist') {
+        return http.Response(
+          '<html>INTERNAL-TRACEBACK-LEAKED-TOKEN-$_token</html>',
+          401,
+        );
+      }
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+    await _pumpDashboard(tester, client);
+    await _login(tester);
+
+    expect(find.text('SmartStock Pro • Đăng nhập'), findsOneWidget);
+    expect(
+      find.text(
+        'Phiên đăng nhập đã hết hạn hoặc bị thu hồi. Vui lòng đăng nhập lại.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('INTERNAL-TRACEBACK'), findsNothing);
+    expect(find.textContaining(_token), findsNothing);
+    expect(find.text('Danh sách theo dõi'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('403, 422 and 500 do not clear an authenticated session',
+      (tester) async {
+    for (final status in [403, 422, 500]) {
+      final client = MockClient((request) async {
+        if (request.url.path.endsWith('/auth/status')) {
+          return _json(200, {'owner_initialized': true});
+        }
+        if (request.url.path.endsWith('/auth/login')) {
+          return _json(200, {'access_token': _token});
+        }
+        if (request.url.path == '/health') {
+          return _json(200, {'status': 'ok', 'version': 'test'});
+        }
+        if (request.url.path == '/api/v1/watchlist') {
+          return http.Response('RAW-PRIVATE-BODY', status);
+        }
+        fail('Unexpected request: ${request.method} ${request.url}');
+      });
+      await _pumpDashboard(tester, client);
+      await _login(tester);
+
+      expect(find.text('SmartStock Pro • Đăng nhập'), findsNothing);
+      expect(find.text('Danh sách theo dõi'), findsOneWidget);
+      expect(find.textContaining('RAW-PRIVATE-BODY'), findsNothing);
+      if (status == 403) {
+        expect(find.textContaining('Bạn không có quyền'), findsOneWidget);
+      } else if (status == 422) {
+        expect(find.textContaining('Dữ liệu gửi lên chưa hợp lệ'), findsOneWidget);
+      } else {
+        expect(find.textContaining('Máy chủ đang gặp sự cố'), findsOneWidget);
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+      client.close();
+    }
+  });
+
+  testWidgets('multiple expired-session callbacks only navigate once',
+      (tester) async {
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('/auth/status')) {
+        return _json(200, {'owner_initialized': true});
+      }
+      if (request.url.path.endsWith('/auth/login')) {
+        return _json(200, {'access_token': _token});
+      }
+      if (request.url.path == '/health') {
+        return _json(200, {'status': 'ok', 'version': 'test'});
+      }
+      if (request.url.path == '/api/v1/watchlist') {
+        return _json(200, {'items': [
+          {'symbol': 'FPT', 'name': 'FPT', 'exchange': 'HOSE', 'candle_count': 0}
+        ]});
+      }
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+    await _pumpDashboard(
+      tester,
+      client,
+      chartBuilder: (baseUrl, symbol, token, onSessionExpired) =>
+          ElevatedButton(
+            onPressed: () {
+              onSessionExpired(token);
+              onSessionExpired(token);
+            },
+            child: const Text('expire-twice'),
+          ),
+    );
+    await _login(tester);
+    await tester.scrollUntilVisible(
+      find.text('FPT'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('FPT'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('expire-twice'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('SmartStock Pro • Đăng nhập'), findsOneWidget);
+    expect(
+      find.text(
+        'Phiên đăng nhập đã hết hạn hoặc bị thu hồi. Vui lòng đăng nhập lại.',
+      ),
+      findsOneWidget,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
   test('API auth omits empty tokens', () {
     expect(apiAuthHeaders(''), isEmpty);
     expect(apiAuthHeaders('   '), isEmpty);
