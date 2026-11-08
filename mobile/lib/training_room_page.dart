@@ -52,6 +52,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   bool _uploading = false;
   bool _documentsLoading = false;
   bool _searched = false;
+  bool _sessionExpired = false;
   String _categoryFilter = 'all';
   String _uploadCategory = 'other';
 
@@ -75,6 +76,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
 
   void _checkResponse(http.Response response, {required int expectedStatus}) {
     if (response.statusCode == 401) {
+      _sessionExpired = true;
       widget.onSessionExpired?.call(widget.apiToken);
       throw const ApiRequestException(401);
     }
@@ -156,7 +158,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         }),
       ).timeout(const Duration(seconds: 20));
       _checkResponse(response, expectedStatus: 201);
-      if (!mounted) return;
+      if (!mounted || _sessionExpired) return;
       _trainingQuestionController.clear();
       _trainingAnswerController.clear();
       _trainingCitationsController.clear();
@@ -182,8 +184,9 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         headers: apiAuthHeaders(widget.apiToken),
       ).timeout(const Duration(seconds: 20));
       _checkResponse(response, expectedStatus: 200);
+      if (!mounted || _sessionExpired) return;
       await _loadTrainingData();
-      if (!mounted) return;
+      if (!mounted || _sessionExpired) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Đã duyệt ví dụ huấn luyện.')),
       );
@@ -226,8 +229,9 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         headers: apiAuthHeaders(widget.apiToken),
       ).timeout(const Duration(seconds: 20));
       _checkResponse(response, expectedStatus: 200);
+      if (!mounted || _sessionExpired) return;
       await _loadTrainingData();
-      if (!mounted) return;
+      if (!mounted || _sessionExpired) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Đã xóa ví dụ huấn luyện.')),
       );
@@ -338,6 +342,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Đã nhập "${payload['title'] ?? file.name}" vào kho tri thức.')),
       );
+      if (!mounted || _sessionExpired) return;
       await _loadDocuments();
     } catch (error) {
       if (mounted) setState(() => _error = 'Không nhập được tài liệu: ${_safeError(error, 'Đã xảy ra lỗi khi nhập tài liệu.')}');
