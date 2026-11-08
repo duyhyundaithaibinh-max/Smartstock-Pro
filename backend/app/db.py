@@ -62,8 +62,8 @@ def _migrate_training_review(conn: sqlite3.Connection) -> None:
         conn.execute("CREATE INDEX idx_training_examples_status_created ON training_examples(status, created_at)")
         conn.commit()
 
-    conn.execute("BEGIN IMMEDIATE")
     conn.executescript("""
+        BEGIN IMMEDIATE;
         CREATE TABLE IF NOT EXISTS training_example_review_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             example_id INTEGER NOT NULL,
@@ -109,8 +109,8 @@ def _migrate_training_review(conn: sqlite3.Connection) -> None:
         BEFORE DELETE ON training_example_quality_reviews
         WHEN EXISTS (SELECT 1 FROM training_examples WHERE id=OLD.example_id)
         BEGIN SELECT RAISE(ABORT, 'training quality reviews are append-only'); END;
+        COMMIT;
     """)
-    conn.commit()
 
 
 def init_db():
