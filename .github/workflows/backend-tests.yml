@@ -20,6 +20,7 @@ jobs:
           python-version: "3.12"
       - run: pip install -r backend/requirements.txt pytest
       - run: cd backend && pytest
+
   android:
     runs-on: ubuntu-latest
     steps:
@@ -27,31 +28,23 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+      - name: Set up Android SDK command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-36"
       - name: Generate Android platform files
         working-directory: mobile
         run: flutter create --platforms=android .
-      - name: Install Android API 36 for file picker plugin
+      - name: Set Android compile SDK
         working-directory: mobile
         shell: bash
         run: |
           set -euo pipefail
           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
-          if [ -z "$SDK_ROOT" ] || [ ! -d "$SDK_ROOT/cmdline-tools" ]; then
-            echo "Android SDK command-line tools were not found; ANDROID_HOME/ANDROID_SDK_ROOT is unavailable."
+          if [ -z "$SDK_ROOT" ]; then
+            echo "Android SDK root is not configured."
             exit 1
           fi
-          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -print -quit)"
-          if [ -z "$SDKMANAGER" ]; then
-            echo "sdkmanager was not found under $SDK_ROOT/cmdline-tools."
-            find "$SDK_ROOT" -maxdepth 4 -type f -name sdkmanager -print || true
-            exit 1
-          fi
-          # sdkmanager closes stdin after accepting licenses; with pipefail, yes may exit 141
-          # (SIGPIPE) even when sdkmanager succeeds. Keep the command's exit status authoritative.
-          set +o pipefail
-          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null
-          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platforms;android-36"
-          set -o pipefail
           sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' android/app/build.gradle.kts
       - name: Resolve Flutter dependencies
         working-directory: mobile
