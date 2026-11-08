@@ -42,6 +42,35 @@ class KnowledgeApiContractTests(unittest.TestCase):
         self.assertEqual(passage["content_sha256"], hit["content_sha256"])
         self.assertEqual(response["retrieval_context"]["status"], "ready")
 
+    def test_citation_resolver_returns_exact_chunk_and_source_hash(self):
+        raw = ("Phân tích tích lũy và dòng tiền. " * 100).encode("utf-8")
+        document = knowledge_base.ingest_document(
+            "accumulation.md", raw, source="user_research", title="Accumulation"
+        )
+        search = market.search_knowledge_documents("tich luy dong tien", top_k=5)
+        hit = search["results"][0]
+
+        resolved = market.resolve_knowledge_citation(
+            hit["document_id"], hit["chunk_index"]
+        )
+
+        self.assertEqual(
+            resolved["citation_id"],
+            f"kb:{document['id']}:{hit['chunk_index']}",
+        )
+        self.assertEqual(resolved["chunk_id"], hit["chunk_id"])
+        self.assertEqual(resolved["content"], hit["text"])
+        self.assertEqual(resolved["char_start"], hit["char_start"])
+        self.assertEqual(resolved["char_end"], hit["char_end"])
+        self.assertEqual(resolved["content_sha256"], document["content_sha256"])
+
+    def test_citation_resolver_returns_404_for_missing_chunk(self):
+        from fastapi import HTTPException
+
+        with self.assertRaises(HTTPException) as raised:
+            market.resolve_knowledge_citation(999, 0)
+        self.assertEqual(raised.exception.status_code, 404)
+
     def test_category_filter_limits_search_and_document_list(self):
         fibonacci = knowledge_base.ingest_document(
             "fib.md", b"Fibonacci retracement and time projection", category="fibonacci"
