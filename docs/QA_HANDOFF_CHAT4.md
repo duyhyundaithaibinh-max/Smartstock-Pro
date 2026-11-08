@@ -1,14 +1,15 @@
 # QA handoff — Chat 4
 
-Last verified: 2026-11-08
+Last verified: 2026-11-08 05:11 UTC
 Scope: verification and packaging only; no merge or release performed.
 
-## Verified CI
+## Latest verified CI
 
 - Workflow: SmartStock Pro CI
-- Run: [42448877490](https://github.com/duyhyundaithaibinh-max/Smartstock-Pro/actions/runs/42448877490)
-- Tested commit: `ff0c35ae73532d9fb12bebb537b5a1534cc45655`
+- Run: [42449459511](https://github.com/duyhyundaithaibinh-max/Smartstock-Pro/actions/runs/42449459511)
+- Tested commit: `c636778b1fcf5757e14377b078a7f6f2e48a0d8f`
 - Branch: `codex-free/sp-019-local-auth`
+- Overall conclusion: **success**
 - Backend job: success (`cd backend && pytest`)
 - Android job: success
   - Flutter dependencies resolved
@@ -17,14 +18,15 @@ Scope: verification and packaging only; no merge or release performed.
   - `flutter build apk --debug`: success
   - artifact upload: success
 
-## Android artifact
+## Latest Android artifact
 
 - Name: `smartstock-pro-debug-apk`
-- Artifact ID: `13604432974`
+- Artifact ID: `13604978219`
 - Size: 75,930,696 bytes
-- SHA-256: `aa4360e145d6cd35517bb9394f10e0b303be97fe157a5b530fc1dba3739111f6`
-- Expires: 2027-02-06
-- Download from the Actions run's Artifacts section. This is a debug APK, not a signed production release.
+- GitHub artifact digest: `sha256:ee5bba02cddf105b7146f83a54c89ab495a9bb2cd4dbf30fd390e93decfad6a7`
+- Created: 2026-11-08 05:11:09 UTC
+- Expires: 2027-02-06 05:06:38 UTC
+- Download from the Actions run's Artifacts section. This is a debug APK, not a signed production release. The digest above is the GitHub artifact digest, not a separately calculated APK-file checksum.
 
 ## Not verified / hand off
 
@@ -42,4 +44,4 @@ At handoff, PR #3 is merged. PR #4 and PR #5 are closed without merge. PR #6 rem
 
 ## Chat 4 completion boundary
 
-CI verification and debug APK artifact creation are complete for the exact commit above. The remaining items are integration/device/release checks and are intentionally left for the owning chat/coordinator. Re-run CI after any backend, mobile, or workflow source change.
+CI verification and debug APK artifact creation are complete for exact commit `c636778b1fcf5757e14377b078a7f6f2e48a0d8f`. The remaining items are integration/device/release checks and are intentionally left for the owning chat/coordinator. Re-run CI after any backend, mobile, or workflow source change.
