@@ -15,13 +15,13 @@ class TrainingRoomPage extends StatefulWidget {
   final String baseUrl;
   final String accessToken;
 
-  Map<String, String> get _authHeaders => apiAuthHeaders(accessToken);
-
   @override
   State<TrainingRoomPage> createState() => _TrainingRoomPageState();
 }
 
 class _TrainingRoomPageState extends State<TrainingRoomPage> {
+  Map<String, String> get _authHeaders => apiAuthHeaders(widget.accessToken);
+
   final TextEditingController _queryController = TextEditingController();
   final TextEditingController _trainingQuestionController = TextEditingController();
   final TextEditingController _trainingAnswerController = TextEditingController();
