@@ -11,11 +11,13 @@ class StockDetailPage extends StatefulWidget {
     required this.baseUrl,
     required this.symbol,
     this.apiToken = '',
+    this.onSessionExpired,
   });
 
   final String baseUrl;
   final String symbol;
   final String apiToken;
+  final SessionExpiredCallback? onSessionExpired;
 
   @override
   State<StockDetailPage> createState() => _StockDetailPageState();
@@ -42,14 +44,18 @@ class _StockDetailPageState extends State<StockDetailPage> {
         '${widget.baseUrl}/api/v1/symbols/${widget.symbol}/detail',
       ).replace(queryParameters: {'timeframe': '1d', 'limit': '500'});
       final response = await http.get(uri, headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 12));
+      if (response.statusCode == 401) {
+        widget.onSessionExpired?.call(widget.apiToken);
+        return;
+      }
       if (response.statusCode != 200) {
-        throw Exception('Backend trả về HTTP ${response.statusCode}');
+        throw ApiRequestException(response.statusCode);
       }
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
       if (!mounted) return;
       setState(() => _detail = payload);
     } catch (error) {
-      if (mounted) setState(() => _error = 'Không tải được chi tiết mã: $error');
+      if (mounted) setState(() => _error = 'Không tải được chi tiết mã: ${safeApiErrorMessage(error, fallback: 'Đã xảy ra lỗi khi tải chi tiết mã.')}');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
