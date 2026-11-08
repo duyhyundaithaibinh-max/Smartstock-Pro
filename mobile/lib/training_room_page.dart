@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import 'api_auth.dart';
+import 'training_review_controls.dart';
 
 typedef TrainingFileSaveCallback = Future<Uri?> Function({
   required String fileName,
@@ -913,13 +914,18 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                     const Text('Chưa có ví dụ huấn luyện. Hãy nạp tài liệu, tra cứu nguồn rồi tạo ví dụ đầu tiên.'),
                   ..._examples.whereType<Map<String, dynamic>>().map((item) {
                     final id = item['id'];
-                    final approved = item['status'] == 'approved';
+                    final statusValue = item['status']?.toString() ?? 'draft';
+                    final statusLabel = switch (statusValue) {
+                      'approved' => 'Đã duyệt',
+                      'rejected' => 'Đã từ chối',
+                      _ => 'Chờ duyệt',
+                    };
                     final citations = (item['citation_ids'] as List<dynamic>? ?? const []).join(', ');
                     return Card(
                       child: Padding(
                         padding: const EdgeInsets.all(12),
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Row(children: [Expanded(child: Text(item['topic']?.toString() ?? 'general')), Chip(label: Text(approved ? 'Đã duyệt' : 'Chờ duyệt'))]),
+                          Row(children: [Expanded(child: Text(item['topic']?.toString() ?? 'general')), Chip(label: Text(statusLabel))]),
                           Text(item['question']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w600)),
                           Text(item['expected_answer']?.toString() ?? ''),
                           Text('Nguồn đã gắn: $citations', style: Theme.of(context).textTheme.bodySmall),
@@ -945,21 +951,18 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                           ],
                           if (id is int) ...[
                             const SizedBox(height: 6),
-                            Wrap(spacing: 8, children: [
-                              if (!approved)
-                                TextButton.icon(
-                                  onPressed: _trainingActionIds.contains(id) ? null : () => _approveTrainingExample(id),
-                                  icon: _trainingActionIds.contains(id)
-                                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                                      : const Icon(Icons.verified_outlined),
-                                  label: Text(_trainingActionIds.contains(id) ? 'Đang xử lý...' : 'Duyệt'),
-                                ),
-                              TextButton.icon(
-                                onPressed: _trainingActionIds.contains(id) ? null : () => _deleteTrainingExample(id),
-                                icon: const Icon(Icons.delete_outline),
-                                label: const Text('Xóa'),
-                              ),
-                            ]),
+                            Text('Revision ${item['revision'] ?? 1}', style: Theme.of(context).textTheme.bodySmall),
+                            TrainingReviewControls(
+                              key: ValueKey('training-review-$id'),
+                              baseUrl: widget.baseUrl,
+                              apiToken: widget.apiToken,
+                              httpClient: _httpClient,
+                              example: item,
+                              onSessionExpired: widget.onSessionExpired,
+                              onRefresh: _loadTrainingData,
+                              onApprove: () => _approveTrainingExample(id),
+                              onDelete: () => _deleteTrainingExample(id),
+                            ),
                           ],
                         ]),
                       ),
