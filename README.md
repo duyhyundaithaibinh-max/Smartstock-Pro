@@ -91,3 +91,15 @@ Nến tuần/tháng chỉ tổng hợp từ các phiên ngày có sẵn; hệ th
 - Review and approve examples manually. If a cited source chunk is deleted, the example cannot be approved and is excluded from JSONL export.
 - Dataset evaluation reports topic coverage, duplicates and approval counts. Initial local-model evaluation requires at least 10 approved, non-duplicate examples; this threshold is a starting gate, not a guarantee of model quality.
 - Export only approved examples as JSONL. This is supervised-data preparation, **not model fine-tuning**. No external AI API or paid model is called.
+
+
+## Bộ giáo trình khởi tạo AI (SP-020)
+- Thư mục `training/curriculum/` có 5 tài liệu Markdown biên soạn nội bộ: Elliott Wave, Fibonacci giá/thời gian, chu kỳ thị trường, volume/dòng tiền/breakout, dữ liệu cổ phiếu Việt Nam và quản trị rủi ro.
+- Nạp từng file vào Training Room; tra cứu để lấy citation ID thật; tạo câu hỏi/đáp án và duyệt thủ công. Không tự gán citation ID vì ID được tạo theo cơ sở dữ liệu của từng cài đặt.
+- Các tài liệu là giáo trình nội bộ, không phải nguồn dữ liệu thị trường hay khuyến nghị mua/bán.
+
+## Đánh giá đầu ra mô hình cục bộ (SP-021 — evaluator foundation)
+- `POST /api/v1/training/evaluation/predictions` yêu cầu owner bearer token.
+- Body: `{"predictions":[{"example_id":1,"answer":"...","citation_ids":["kb:1:0"]}]}`.
+- Chỉ chấm trên ví dụ `approved`; báo exact match, token precision/recall/F1, độ chính xác/độ bao phủ citation, citation ID không hợp lệ và coverage trên tập đã duyệt.
+- Endpoint không gọi model, không fine-tune, không dùng mạng hoặc API trả phí. Đây là bộ chấm tự động cơ bản; token overlap không đo được tính đúng ngữ nghĩa và citation hợp lệ về ID chưa chứng minh nội dung thực sự hỗ trợ câu trả lời. Cần holdout set và con người rà soát.
