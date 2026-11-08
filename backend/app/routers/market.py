@@ -37,7 +37,7 @@ def create_symbol(payload: SymbolCreate):
 
 
 @router.get("/symbols")
-def list_symbols(exchange: str | None = None, q: str | None = Query(default=None, max_length=80)):
+def list_symbols(exchange: str | None = None, q: Annotated[str | None, Query(max_length=80)] = None):
     sql = "SELECT symbol,name,exchange,sector FROM symbols"
     clauses = []
     params = []
@@ -57,7 +57,7 @@ def list_symbols(exchange: str | None = None, q: str | None = Query(default=None
 
 
 @router.get("/candles")
-def get_candles(symbol: str, timeframe: str = "1d", limit: int = Query(500, ge=1, le=5000)):
+def get_candles(symbol: str, timeframe: str = "1d", limit: Annotated[int, Query(ge=1, le=5000)] = 500):
     with connection() as conn:
         rows = conn.execute(
             """SELECT timestamp,open,high,low,close,volume,source FROM candles
@@ -70,8 +70,8 @@ def get_candles(symbol: str, timeframe: str = "1d", limit: int = Query(500, ge=1
 @router.get("/symbols/{symbol}/detail")
 def get_stock_detail(
     symbol: str,
-    timeframe: str = Query("1d", min_length=2, max_length=8),
-    limit: int = Query(500, ge=1, le=5000),
+    timeframe: Annotated[str, Query(min_length=2, max_length=8)] = "1d",
+    limit: Annotated[int, Query(ge=1, le=5000)] = 500,
 ):
     """Return the latest sourced OHLCV snapshot, indicators and price zones."""
     normalized = symbol.upper()
@@ -94,8 +94,8 @@ def get_stock_detail(
 @router.get("/candles/chart")
 def get_chart_candles(
     symbol: str,
-    period: str = Query("daily", pattern="^(daily|weekly|monthly)$"),
-    limit: int = Query(500, ge=1, le=5000),
+    period: Annotated[str, Query(pattern="^(daily|weekly|monthly)$")] = "daily",
+    limit: Annotated[int, Query(ge=1, le=5000)] = 500,
 ):
     """Return stored daily OHLCV as daily, ISO-weekly or calendar-month bars."""
     daily = get_candles(symbol, "1d", min(limit * (5 if period == "weekly" else 23 if period == "monthly" else 1), 5000))
@@ -124,7 +124,7 @@ def get_chart_candles(
 @router.post("/candles/import-csv")
 async def import_csv(
     symbol: str,
-    source: str = Query(min_length=2, max_length=100),
+    source: Annotated[str, Query(min_length=2, max_length=100)],
     file: UploadFile = File(...),
 ):
     if not file.filename or not file.filename.lower().endswith(".csv"):
@@ -192,7 +192,7 @@ async def import_csv(
 
 
 @router.get("/indicators")
-def get_indicators(symbol: str, timeframe: str = "1d", limit: int = Query(500, ge=30, le=5000)):
+def get_indicators(symbol: str, timeframe: str = "1d", limit: Annotated[int, Query(ge=30, le=5000)] = 500):
     candles = get_candles(symbol, timeframe, limit)
     if not candles:
         raise HTTPException(404, "No candle data found")
@@ -226,7 +226,7 @@ def get_indicators(symbol: str, timeframe: str = "1d", limit: int = Query(500, g
 def get_price_action_analysis(
     symbol: str,
     timeframe: str = "1d",
-    limit: int = Query(500, ge=1, le=5000),
+    limit: Annotated[int, Query(ge=1, le=5000)] = 500,
 ):
     """Deterministic trend, support/resistance and breakout analysis from stored OHLCV."""
     candles = get_candles(symbol, timeframe, limit)
@@ -253,9 +253,9 @@ def get_price_action_analysis(
 def get_fibonacci_analysis(
     symbol: str,
     timeframe: str = "1d",
-    limit: int = Query(500, ge=1, le=5000),
-    lookback: int = Query(250, ge=10, le=5000),
-    wing: int = Query(2, ge=1, le=10),
+    limit: Annotated[int, Query(ge=1, le=5000)] = 500,
+    lookback: Annotated[int, Query(ge=10, le=5000)] = 250,
+    wing: Annotated[int, Query(ge=1, le=10)] = 2,
 ):
     """Deterministic Fibonacci price/time projections from confirmed OHLCV pivots."""
     candles = get_candles(symbol, timeframe, limit)
@@ -284,9 +284,9 @@ def get_fibonacci_analysis(
 def get_elliott_analysis(
     symbol: str,
     timeframe: str = "1d",
-    limit: int = Query(500, ge=1, le=5000),
-    lookback: int = Query(250, ge=10, le=5000),
-    wing: int = Query(2, ge=1, le=10),
+    limit: Annotated[int, Query(ge=1, le=5000)] = 500,
+    lookback: Annotated[int, Query(ge=10, le=5000)] = 250,
+    wing: Annotated[int, Query(ge=1, le=10)] = 2,
 ):
     """Rule-based Elliott five-wave impulse hypothesis from confirmed OHLCV pivots."""
     candles = get_candles(symbol, timeframe, limit)
@@ -315,8 +315,8 @@ def get_elliott_analysis(
 def get_volume_flow_analysis(
     symbol: str,
     timeframe: str = "1d",
-    limit: int = Query(500, ge=1, le=5000),
-    window: int = Query(20, ge=2, le=250),
+    limit: Annotated[int, Query(ge=1, le=5000)] = 500,
+    window: Annotated[int, Query(ge=2, le=250)] = 20,
 ):
     """Deterministic OHLCV money-flow and accumulation/distribution observations."""
     candles = get_candles(symbol, timeframe, limit)
@@ -346,7 +346,7 @@ def get_volume_flow_analysis(
 def get_analysis_report(
     symbol: str,
     timeframe: str = "1d",
-    limit: int = Query(500, ge=1, le=5000),
+    limit: Annotated[int, Query(ge=1, le=5000)] = 500,
 ):
     """Combined deterministic technical report and conditional market scenarios."""
     candles = get_candles(symbol, timeframe, limit)
@@ -375,7 +375,7 @@ def get_watchlist():
 
 
 @router.post("/watchlist", status_code=201)
-def add_watchlist_symbol(symbol: str = Query(min_length=3, max_length=12, pattern=r"^[A-Za-z0-9.]+$")):
+def add_watchlist_symbol(symbol: Annotated[str, Query(min_length=3, max_length=12, pattern=r"^[A-Za-z0-9.]+$")]):
     normalized, error = watchlist.add_symbol(symbol)
     if error == "symbol_not_found":
         raise HTTPException(404, "Create or import the symbol before adding it to the watchlist")
@@ -407,8 +407,8 @@ def put_watchlist_order(symbols: list[str] = Body(..., min_length=0, max_length=
 @router.post("/knowledge/documents", status_code=201)
 async def upload_knowledge_document(
     file: UploadFile = File(...),
-    source: str = Query("user_upload", min_length=1, max_length=100),
-    title: str | None = Query(default=None, max_length=200),
+    source: Annotated[str, Query(min_length=1, max_length=100)] = "user_upload",
+    title: Annotated[str | None, Query(max_length=200)] = None,
 ):
     """Extract and index a local TXT/Markdown/CSV/PDF document into SQLite."""
     raw = await file.read(10_485_761)
@@ -455,7 +455,7 @@ def delete_knowledge_document(document_id: int):
 
 @router.get("/knowledge/search")
 def search_knowledge_documents(
-    q: str = Query(min_length=1, max_length=500),
+    q: Annotated[str, Query(min_length=1, max_length=500)],
     top_k: Annotated[int, Query(ge=1, le=20)] = 5,
 ):
     """Retrieve local knowledge chunks with stable source citations."""
@@ -469,8 +469,8 @@ def search_knowledge_documents(
 
 @router.get("/analysis/rules")
 def list_analysis_rule_versions(
-    limit: int = Query(100, ge=1, le=500),
-    offset: int = Query(0, ge=0),
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ):
     """List immutable rule configuration versions and their activation state."""
     return rule_registry.list_versions(limit=limit, offset=offset)
@@ -508,9 +508,9 @@ def activate_analysis_rule_version(version: str):
 @router.get("/analysis/rules/compare")
 def compare_analysis_rule_versions(
     symbol: str,
-    versions: str = Query(min_length=5, max_length=100),
-    timeframe: str = Query("1d", min_length=2, max_length=8),
-    limit: int = Query(500, ge=20, le=5000),
+    versions: Annotated[str, Query(min_length=5, max_length=100)],
+    timeframe: Annotated[str, Query(min_length=2, max_length=8)] = "1d",
+    limit: Annotated[int, Query(ge=20, le=5000)] = 500,
 ):
     """Compare 2-5 immutable rule versions against the same stored OHLCV history."""
     requested = [item.strip() for item in versions.split(",") if item.strip()]
