@@ -75,3 +75,19 @@ Nến tuần/tháng chỉ tổng hợp từ các phiên ngày có sẵn; hệ th
 - `GET /api/v1/analysis/rules/compare?symbol=FPT&versions=1.0.0,1.1.0&timeframe=1d&limit=500` compares 2–5 stored rule versions against the same locally stored OHLCV candles.
 - Output includes version/config hashes, input provenance, deterministic signatures (trend, breakout, Fibonacci, Elliott, volume-flow and scenario statuses) and only the fields that differ.
 - This is an output comparison, not a backtest: no simulated fills, returns, win rate, forecast accuracy or claim that a newer version is better. Out-of-sample datasets and predeclared evaluation criteria are required for performance claims.
+
+## Cài thử Android (APK debug)
+
+1. Mở tab **Actions** của repository và chọn workflow run có commit cần thử; chỉ tải artifact `smartstock-pro-debug-apk` từ run có cả hai job `backend` và `android` thành công.
+2. Tải ZIP artifact, giải nén và lấy file `app-debug.apk`.
+3. Chuyển APK sang điện thoại Android, mở file và cho phép cài ứng dụng từ nguồn này nếu Android yêu cầu.
+4. Mở SmartStock Pro. Trong ô **Backend URL**, nhập địa chỉ máy tính đang chạy backend cùng mạng Wi-Fi, ví dụ `http://192.168.1.10:8000`, rồi nhấn **Kết nối backend**.
+
+### Kết nối điện thoại với backend
+
+- Chạy backend trên máy tính và bind ra mạng LAN: `uvicorn app.main:app --host 0.0.0.0 --port 8000` (thực hiện trong thư mục `backend`).
+- Nếu dùng Docker Compose, chạy `docker compose up --build -d`; bảo đảm cổng TCP 8000 được mở trong firewall của máy tính.
+- Điện thoại và máy tính phải cùng mạng LAN/Wi-Fi. Thay địa chỉ ví dụ bằng IPv4 LAN thật của máy tính; không dùng `localhost` trên điện thoại. Địa chỉ `10.0.2.2` chỉ dành cho Android Emulator truy cập máy host.
+- Kiểm tra từ trình duyệt điện thoại bằng `http://<IP-LAN-máy-tính>:8000/health` trước khi kết nối trong ứng dụng.
+
+**Lưu ý bảo mật:** APK lấy từ CI hiện là bản debug để kiểm thử, không phải bản phát hành ký số. Cấu hình HTTP không mã hóa chỉ được bật cho debug build; không đưa backend thử nghiệm ra Internet công cộng. Trước khi phát hành rộng rãi cần cấu hình HTTPS, ký release APK/AAB, kiểm thử trên thiết bị thật và bổ sung hướng dẫn cập nhật/gỡ cài đặt.
