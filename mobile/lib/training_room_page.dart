@@ -314,7 +314,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                   const Text('Nhập tài liệu TXT, Markdown, CSV hoặc PDF có văn bản chọn được. Giới hạn 10 MB/tệp; PDF scan cần OCR nên chưa hỗ trợ.'),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    value: _uploadCategory,
+                    initialValue: _uploadCategory,
                     decoration: const InputDecoration(
                       labelText: 'Phân loại tài liệu nhập vào',
                       border: OutlineInputBorder(),
@@ -374,7 +374,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                   Text('Tra cứu kho tri thức', style: Theme.of(context).textTheme.titleLarge),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
-                    value: _categoryFilter,
+                    initialValue: _categoryFilter,
                     decoration: const InputDecoration(
                       labelText: 'Lọc theo nhóm tài liệu',
                       border: OutlineInputBorder(),
