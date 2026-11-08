@@ -3,10 +3,10 @@ import 'package:smartstock_pro/api_auth.dart';
 import 'package:smartstock_pro/main.dart' show SmartStockApp;
 
 void main() {
-  testWidgets('dashboard renders SmartStock Pro', (tester) async {
+  testWidgets('first launch shows backend connection and owner login gate', (tester) async {
     await tester.pumpWidget(const SmartStockApp());
-    expect(find.text('SmartStock Pro'), findsOneWidget);
-    expect(find.text('Thị trường Việt Nam'), findsOneWidget);
+    expect(find.text('SmartStock Pro • Đăng nhập'), findsOneWidget);
+    expect(find.text('Kết nối backend'), findsOneWidget);
   });
 
   test('API auth omits empty tokens', () {
