@@ -50,6 +50,7 @@ def create_first_owner(username: Any, password: Any) -> dict:
     salt = secrets.token_bytes(16)
     digest = _password_hash(password, salt)
     with connection() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         if conn.execute("SELECT 1 FROM auth_users LIMIT 1").fetchone():
             raise AuthError("Tài khoản chủ sở hữu đã được khởi tạo; không cho phép đăng ký thêm.")
         conn.execute(
@@ -72,9 +73,14 @@ def _new_session(conn: Any, user_id: int) -> dict:
 
 
 def login(username: Any, password: Any) -> dict:
-    if not isinstance(username, str) or not isinstance(password, str):
+    if (not isinstance(username, str) or not isinstance(password, str)
+            or len(username) > 40 or len(password) > 256):
         raise AuthError("Tên đăng nhập hoặc mật khẩu không đúng.")
     with connection() as conn:
+        conn.execute(
+            "DELETE FROM auth_sessions WHERE expires_at < ? OR (revoked_at IS NOT NULL AND revoked_at < datetime('now','-30 days'))",
+            (datetime.now(timezone.utc).isoformat(),),
+        )
         row = conn.execute(
             "SELECT id,username,password_salt,password_hash,password_iterations FROM auth_users WHERE username=?",
             (username.strip().lower(),),
