@@ -117,6 +117,18 @@ def init_db():
             added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(symbol) REFERENCES symbols(symbol) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS training_examples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            question TEXT NOT NULL,
+            expected_answer TEXT NOT NULL,
+            topic TEXT NOT NULL DEFAULT 'general',
+            citation_ids TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('draft','approved')) DEFAULT 'draft',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_training_examples_status_created
+            ON training_examples(status, created_at);
         """)
         # Safe additive migration for databases created before document categories.
         document_columns = {

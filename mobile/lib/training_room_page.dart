@@ -21,7 +21,16 @@ class TrainingRoomPage extends StatefulWidget {
 
 class _TrainingRoomPageState extends State<TrainingRoomPage> {
   final TextEditingController _queryController = TextEditingController();
+  final TextEditingController _trainingQuestionController = TextEditingController();
+  final TextEditingController _trainingAnswerController = TextEditingController();
+  final TextEditingController _trainingTopicController = TextEditingController(text: 'technical_analysis');
+  final TextEditingController _trainingCitationsController = TextEditingController();
   List<dynamic> _results = [];
+  List<dynamic> _examples = [];
+  Map<String, dynamic>? _evaluation;
+  bool _savingExample = false;
+  bool _trainingDataLoading = false;
+  final Set<int> _trainingActionIds = <int>{};
   List<dynamic> _documents = [];
   Map<String, dynamic>? _context;
   String? _error;
@@ -50,6 +59,169 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     return Uri.parse('${widget.baseUrl}$path').replace(queryParameters: query);
   }
 
+  Future<void> _loadTrainingData() async {
+    if (mounted) {
+      setState(() {
+        _trainingDataLoading = true;
+      });
+    }
+    try {
+      final responses = await Future.wait([
+        http.get(
+          _uri('/api/v1/training/examples', {'limit': '100', 'offset': '0'}),
+          headers: apiAuthHeaders(widget.apiToken),
+        ).timeout(const Duration(seconds: 20)),
+        http.get(
+          _uri('/api/v1/training/evaluation'),
+          headers: apiAuthHeaders(widget.apiToken),
+        ).timeout(const Duration(seconds: 20)),
+      ]);
+      if (responses.any((response) => response.statusCode != 200)) {
+        throw Exception('Backend chưa hỗ trợ đầy đủ API Training Room.');
+      }
+      final examples = jsonDecode(responses[0].body) as Map<String, dynamic>;
+      final evaluation = jsonDecode(responses[1].body) as Map<String, dynamic>;
+      if (!mounted) return;
+      setState(() {
+        _examples = examples['items'] as List<dynamic>? ?? [];
+        _evaluation = evaluation;
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = 'Không tải được bộ dữ liệu huấn luyện: $error');
+      }
+    } finally {
+      if (mounted) setState(() => _trainingDataLoading = false);
+    }
+  }
+
+  Future<void> _saveTrainingExample() async {
+    if (_savingExample) return;
+    final question = _trainingQuestionController.text.trim();
+    final answer = _trainingAnswerController.text.trim();
+    final topic = _trainingTopicController.text.trim();
+    final citations = _trainingCitationsController.text
+        .split(',').map((item) => item.trim()).where((item) => item.isNotEmpty).toList();
+    final citationPattern = RegExp(r'^kb:\d+:\d+$');
+    if (question.length < 10 || question.length > 1000 ||
+        answer.length < 20 || answer.length > 5000 ||
+        topic.length > 80 || citations.isEmpty || citations.length > 10 ||
+        citations.any((item) => !citationPattern.hasMatch(item)) ||
+        citations.toSet().length != citations.length) {
+      setState(() => _error = 'Câu hỏi cần 10–1.000 ký tự, đáp án 20–5.000 ký tự, chủ đề tối đa 80 ký tự; cần 1–10 mã nguồn kb:document_id:chunk_index hợp lệ và không trùng.');
+      return;
+    }
+    setState(() { _savingExample = true; _error = null; });
+    try {
+      final response = await http.post(
+        _uri('/api/v1/training/examples'),
+        headers: {'Content-Type': 'application/json', ...apiAuthHeaders(widget.apiToken)},
+        body: jsonEncode({
+          'question': question, 'expected_answer': answer,
+          'topic': topic.isEmpty ? 'general' : topic, 'citation_ids': citations,
+        }),
+      ).timeout(const Duration(seconds: 20));
+      if (response.statusCode != 201) throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      _trainingQuestionController.clear();
+      _trainingAnswerController.clear();
+      _trainingCitationsController.clear();
+      await _loadTrainingData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã lưu ví dụ ở trạng thái chờ duyệt.')));
+    } catch (error) {
+      if (mounted) setState(() => _error = 'Không lưu được ví dụ: $error');
+    } finally {
+      if (mounted) setState(() => _savingExample = false);
+    }
+  }
+
+  Future<void> _approveTrainingExample(int id) async {
+    if (_trainingActionIds.contains(id)) return;
+    setState(() {
+      _trainingActionIds.add(id);
+      _error = null;
+    });
+    try {
+      final response = await http.post(
+        _uri('/api/v1/training/examples/$id/approve'),
+        headers: apiAuthHeaders(widget.apiToken),
+      ).timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      }
+      await _loadTrainingData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã duyệt ví dụ huấn luyện.')),
+      );
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = 'Không duyệt được ví dụ: $error');
+      }
+    } finally {
+      if (mounted) setState(() => _trainingActionIds.remove(id));
+    }
+  }
+
+  Future<void> _deleteTrainingExample(int id) async {
+    if (_trainingActionIds.contains(id)) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Xóa ví dụ huấn luyện?'),
+        content: const Text('Thao tác này sẽ xóa ví dụ khỏi bộ dữ liệu cục bộ.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Xóa'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _trainingActionIds.add(id);
+      _error = null;
+    });
+    try {
+      final response = await http.delete(
+        _uri('/api/v1/training/examples/$id'),
+        headers: apiAuthHeaders(widget.apiToken),
+      ).timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      }
+      await _loadTrainingData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã xóa ví dụ huấn luyện.')),
+      );
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = 'Không xóa được ví dụ: $error');
+      }
+    } finally {
+      if (mounted) setState(() => _trainingActionIds.remove(id));
+    }
+  }
+
+  Future<void> _copyTrainingExport() async {
+    try {
+      final response = await http.get(_uri('/api/v1/training/export'),
+          headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200) throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      final payload = jsonDecode(response.body) as Map<String, dynamic>;
+      await Clipboard.setData(ClipboardData(text: payload['content']?.toString() ?? ''));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã sao chép ${payload['count'] ?? 0} ví dụ đã duyệt dạng JSONL.')));
+    } catch (error) {
+      if (mounted) setState(() => _error = 'Không xuất được dữ liệu: $error');
+    }
+  }
   Future<void> _loadDocuments() async {
     setState(() {
       _documentsLoading = true;
@@ -222,11 +394,16 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   void initState() {
     super.initState();
     _loadDocuments();
+    _loadTrainingData();
   }
 
   @override
   void dispose() {
     _queryController.dispose();
+    _trainingQuestionController.dispose();
+    _trainingAnswerController.dispose();
+    _trainingTopicController.dispose();
+    _trainingCitationsController.dispose();
     super.dispose();
   }
 
@@ -283,6 +460,32 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                     );
                   },
                   icon: const Icon(Icons.content_copy, size: 18),
+                ),
+                IconButton(
+                  tooltip: 'Đưa mã trích dẫn vào biểu mẫu huấn luyện',
+                  onPressed: RegExp(r'^kb:\d+:\d+$').hasMatch(citation)
+                      ? () {
+                          final existing = _trainingCitationsController.text
+                              .split(',')
+                              .map((value) => value.trim())
+                              .where((value) => value.isNotEmpty)
+                              .toList();
+                          if (existing.contains(citation)) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Mã trích dẫn đã có trong biểu mẫu.')),
+                            );
+                            return;
+                          }
+                          setState(() {
+                            _trainingCitationsController.text =
+                                [...existing, citation].join(', ');
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Đã thêm mã trích dẫn vào biểu mẫu.')),
+                          );
+                        }
+                      : null,
+                  icon: const Icon(Icons.playlist_add, size: 20),
                 ),
               ],
             ),
@@ -384,6 +587,87 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
             ))
           else
             ..._documents.whereType<Map<String, dynamic>>().map(_documentCard),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Bộ ví dụ huấn luyện có kiểm duyệt', style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 6),
+                  const Text('Tạo cặp câu hỏi–đáp án chuẩn dựa trên tài liệu đã nạp. Mỗi ví dụ phải gắn mã trích dẫn nguồn; ví dụ mới chờ duyệt và chỉ ví dụ đã duyệt mới được xuất.'),
+                  const SizedBox(height: 12),
+                  TextField(controller: _trainingQuestionController, enabled: !_savingExample, maxLength: 1000, minLines: 2, maxLines: 3, decoration: const InputDecoration(labelText: 'Câu hỏi mẫu', helperText: 'Tối thiểu 10 ký tự', border: OutlineInputBorder())),
+                  const SizedBox(height: 8),
+                  TextField(controller: _trainingAnswerController, enabled: !_savingExample, maxLength: 5000, minLines: 3, maxLines: 5, decoration: const InputDecoration(labelText: 'Đáp án chuẩn đã kiểm chứng', helperText: 'Tối thiểu 20 ký tự', border: OutlineInputBorder())),
+                  const SizedBox(height: 8),
+                  TextField(controller: _trainingTopicController, enabled: !_savingExample, maxLength: 80, decoration: const InputDecoration(labelText: 'Chủ đề', border: OutlineInputBorder())),
+                  const SizedBox(height: 8),
+                  TextField(controller: _trainingCitationsController, enabled: !_savingExample, maxLength: 1000, decoration: const InputDecoration(labelText: 'Mã nguồn (kb:document:chunk)', helperText: 'Lấy citation_id từ kết quả tra cứu kho tri thức; phân tách nhiều mã bằng dấu phẩy.', border: OutlineInputBorder())),
+                  const SizedBox(height: 10),
+                  SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: _savingExample ? null : _saveTrainingExample, icon: const Icon(Icons.playlist_add), label: Text(_savingExample ? 'Đang lưu...' : 'Lưu ví dụ chờ duyệt'))),
+                  const Divider(height: 24),
+                  if (_trainingDataLoading) ...[
+                    const LinearProgressIndicator(),
+                    const SizedBox(height: 8),
+                    const Text('Đang tải dữ liệu huấn luyện...'),
+                  ],
+                  if (_evaluation != null) ...[
+                    Text('Tổng: ${_evaluation!['total_examples'] ?? 0} • Đã duyệt: ${_evaluation!['approved_examples'] ?? 0} • Chờ duyệt: ${_evaluation!['draft_examples'] ?? 0}'),
+                    Text('Câu hỏi trùng: ${_evaluation!['duplicate_question_groups'] ?? 0} • Trạng thái: ${_evaluation!['readiness'] ?? '—'}'),
+                    Wrap(spacing: 8, children: [
+                      OutlinedButton.icon(
+                        onPressed: _trainingDataLoading ? null : _loadTrainingData,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Cập nhật'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: !_trainingDataLoading && (_evaluation!['approved_examples'] as num? ?? 0) > 0 ? _copyTrainingExport : null,
+                        icon: const Icon(Icons.copy),
+                        label: const Text('Sao chép JSONL đã duyệt'),
+                      ),
+                    ]),
+                  ],
+                  if (!_trainingDataLoading && _examples.isEmpty)
+                    const Text('Chưa có ví dụ huấn luyện. Hãy nạp tài liệu, tra cứu nguồn rồi tạo ví dụ đầu tiên.'),
+                  ..._examples.whereType<Map<String, dynamic>>().map((item) {
+                    final id = item['id'];
+                    final approved = item['status'] == 'approved';
+                    final citations = (item['citation_ids'] as List<dynamic>? ?? const []).join(', ');
+                    return Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Row(children: [Expanded(child: Text(item['topic']?.toString() ?? 'general')), Chip(label: Text(approved ? 'Đã duyệt' : 'Chờ duyệt'))]),
+                          Text(item['question']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w600)),
+                          Text(item['expected_answer']?.toString() ?? ''),
+                          Text('Nguồn: $citations', style: Theme.of(context).textTheme.bodySmall),
+                          if (id is int) ...[
+                            const SizedBox(height: 6),
+                            Wrap(spacing: 8, children: [
+                              if (!approved)
+                                TextButton.icon(
+                                  onPressed: _trainingActionIds.contains(id) ? null : () => _approveTrainingExample(id),
+                                  icon: _trainingActionIds.contains(id)
+                                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                                      : const Icon(Icons.verified_outlined),
+                                  label: Text(_trainingActionIds.contains(id) ? 'Đang xử lý...' : 'Duyệt'),
+                                ),
+                              TextButton.icon(
+                                onPressed: _trainingActionIds.contains(id) ? null : () => _deleteTrainingExample(id),
+                                icon: const Icon(Icons.delete_outline),
+                                label: const Text('Xóa'),
+                              ),
+                            ]),
+                          ],
+                        ]),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ),
           const SizedBox(height: 16),
           Card(
             child: Padding(
