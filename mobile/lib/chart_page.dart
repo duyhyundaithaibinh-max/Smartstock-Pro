@@ -8,17 +8,25 @@ import 'analysis_page.dart';
 import 'api_auth.dart';
 
 class ChartPage extends StatefulWidget {
-  const ChartPage({super.key, required this.baseUrl, required this.symbol, this.apiToken = ''});
+  const ChartPage({
+    super.key, required this.baseUrl, required this.symbol,
+    this.apiToken = '', this.onSessionExpired, this.httpClient,
+  });
 
   final String baseUrl;
   final String symbol;
   final String apiToken;
+  final SessionExpiredCallback? onSessionExpired;
+  final http.Client? httpClient;
 
   @override
   State<ChartPage> createState() => _ChartPageState();
 }
 
 class _ChartPageState extends State<ChartPage> {
+  late final http.Client _httpClient = widget.httpClient ?? http.Client();
+  bool get _ownsHttpClient => widget.httpClient == null;
+
   static const _periods = <String, String>{
     'daily': 'Ngày',
     'weekly': 'Tuần',
@@ -52,9 +60,13 @@ class _ChartPageState extends State<ChartPage> {
         'period': _period,
         'limit': '180',
       });
-      final response = await http.get(uri, headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 12));
+      final response = await _httpClient.get(uri, headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 12));
+      if (response.statusCode == 401) {
+        widget.onSessionExpired?.call(widget.apiToken);
+        return;
+      }
       if (response.statusCode != 200) {
-        throw Exception('Backend trả về HTTP ${response.statusCode}');
+        throw ApiRequestException(response.statusCode);
       }
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
       final rows = (payload['candles'] as List<dynamic>? ?? const []);
@@ -67,10 +79,16 @@ class _ChartPageState extends State<ChartPage> {
         _status = payload['status']?.toString();
       });
     } catch (error) {
-      if (mounted) setState(() => _error = 'Không tải được biểu đồ: $error');
+      if (mounted) setState(() => _error = 'Không tải được biểu đồ: ${safeApiErrorMessage(error, fallback: 'Đã xảy ra lỗi khi tải biểu đồ.')}');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  @override
+  void dispose() {
+    if (_ownsHttpClient) _httpClient.close();
+    super.dispose();
   }
 
   @override
@@ -89,6 +107,7 @@ class _ChartPageState extends State<ChartPage> {
                   baseUrl: widget.baseUrl,
                   symbol: widget.symbol,
                   apiToken: widget.apiToken,
+                  onSessionExpired: widget.onSessionExpired,
                 ),
               ),
             ),
@@ -102,6 +121,7 @@ class _ChartPageState extends State<ChartPage> {
                   baseUrl: widget.baseUrl,
                   symbol: widget.symbol,
                   apiToken: widget.apiToken,
+                  onSessionExpired: widget.onSessionExpired,
                 ),
               ),
             ),

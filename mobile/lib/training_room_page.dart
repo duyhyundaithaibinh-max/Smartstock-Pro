@@ -10,16 +10,25 @@ import 'api_auth.dart';
 /// Local knowledge retrieval and document management.
 /// Search results are source passages, not AI-generated answers.
 class TrainingRoomPage extends StatefulWidget {
-  const TrainingRoomPage({super.key, required this.baseUrl, this.apiToken = ''});
+  const TrainingRoomPage({
+    super.key, required this.baseUrl, this.apiToken = '',
+    this.onSessionExpired,
+    this.httpClient,
+  });
 
   final String baseUrl;
   final String apiToken;
+  final SessionExpiredCallback? onSessionExpired;
+  final http.Client? httpClient;
 
   @override
   State<TrainingRoomPage> createState() => _TrainingRoomPageState();
 }
 
 class _TrainingRoomPageState extends State<TrainingRoomPage> {
+  late final http.Client _httpClient = widget.httpClient ?? http.Client();
+  bool get _ownsHttpClient => widget.httpClient == null;
+
   final TextEditingController _queryController = TextEditingController();
   final TextEditingController _trainingQuestionController = TextEditingController();
   final TextEditingController _trainingAnswerController = TextEditingController();
@@ -43,6 +52,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   bool _uploading = false;
   bool _documentsLoading = false;
   bool _searched = false;
+  bool _sessionExpired = false;
   String _categoryFilter = 'all';
   String _uploadCategory = 'other';
 
@@ -64,7 +74,24 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     return Uri.parse('${widget.baseUrl}$path').replace(queryParameters: query);
   }
 
+  void _checkResponse(http.Response response, {required int expectedStatus}) {
+    if (response.statusCode == 401) {
+      if (!_sessionExpired) {
+        _sessionExpired = true;
+        widget.onSessionExpired?.call(widget.apiToken);
+      }
+      throw const ApiRequestException(401);
+    }
+    if (response.statusCode != expectedStatus) {
+      throw ApiRequestException(response.statusCode);
+    }
+  }
+
+  String _safeError(Object error, String fallback) =>
+      safeApiErrorMessage(error, fallback: fallback);
+
   Future<void> _loadTrainingData() async {
+    if (!mounted || _sessionExpired) return;
     final requestVersion = ++_trainingDataRequestVersion;
     if (mounted) {
       setState(() {
@@ -73,18 +100,26 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     }
     try {
       final responses = await Future.wait([
-        http.get(
+        _httpClient.get(
           _uri('/api/v1/training/examples', {'limit': '100', 'offset': '0'}),
           headers: apiAuthHeaders(widget.apiToken),
         ).timeout(const Duration(seconds: 20)),
-        http.get(
+        _httpClient.get(
           _uri('/api/v1/training/evaluation'),
           headers: apiAuthHeaders(widget.apiToken),
         ).timeout(const Duration(seconds: 20)),
       ]);
-      if (responses.any((response) => response.statusCode != 200)) {
-        throw Exception('Backend chưa hỗ trợ đầy đủ API Training Room.');
+      if (responses.any((response) => response.statusCode == 401)) {
+        if (!_sessionExpired) {
+          _sessionExpired = true;
+          widget.onSessionExpired?.call(widget.apiToken);
+        }
+        throw const ApiRequestException(401);
       }
+      for (final response in responses) {
+        _checkResponse(response, expectedStatus: 200);
+      }
+      if (!mounted || _sessionExpired) return;
       final examples = jsonDecode(responses[0].body) as Map<String, dynamic>;
       final evaluation = jsonDecode(responses[1].body) as Map<String, dynamic>;
       if (!mounted || requestVersion != _trainingDataRequestVersion) return;
@@ -94,7 +129,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       });
     } catch (error) {
       if (mounted && requestVersion == _trainingDataRequestVersion) {
-        setState(() => _error = 'Không tải được bộ dữ liệu huấn luyện: $error');
+        setState(() => _error = 'Không tải được bộ dữ liệu huấn luyện: ${_safeError(error, 'Đã xảy ra lỗi khi tải dữ liệu huấn luyện.')}');
       }
     } finally {
       if (mounted && requestVersion == _trainingDataRequestVersion) {
@@ -104,6 +139,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   }
 
   Future<void> _saveTrainingExample() async {
+    if (!mounted || _sessionExpired) return;
     if (_savingExample) return;
     final question = _trainingQuestionController.text.trim();
     final answer = _trainingAnswerController.text.trim();
@@ -121,7 +157,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     }
     setState(() { _savingExample = true; _error = null; });
     try {
-      final response = await http.post(
+      final response = await _httpClient.post(
         _uri('/api/v1/training/examples'),
         headers: {'Content-Type': 'application/json', ...apiAuthHeaders(widget.apiToken)},
         body: jsonEncode({
@@ -129,43 +165,43 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
           'topic': topic.isEmpty ? 'general' : topic, 'citation_ids': citations,
         }),
       ).timeout(const Duration(seconds: 20));
-      if (response.statusCode != 201) throw Exception('HTTP ${response.statusCode}: ${response.body}');
-      if (!mounted) return;
+      _checkResponse(response, expectedStatus: 201);
+      if (!mounted || _sessionExpired) return;
       _trainingQuestionController.clear();
       _trainingAnswerController.clear();
       _trainingCitationsController.clear();
       await _loadTrainingData();
-      if (!mounted) return;
+      if (!mounted || _sessionExpired) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã lưu ví dụ ở trạng thái chờ duyệt.')));
     } catch (error) {
-      if (mounted) setState(() => _error = 'Không lưu được ví dụ: $error');
+      if (mounted) setState(() => _error = 'Không lưu được ví dụ: ${_safeError(error, 'Đã xảy ra lỗi khi lưu ví dụ.')}');
     } finally {
       if (mounted) setState(() => _savingExample = false);
     }
   }
 
   Future<void> _approveTrainingExample(int id) async {
+    if (!mounted || _sessionExpired) return;
     if (_trainingActionIds.contains(id)) return;
     setState(() {
       _trainingActionIds.add(id);
       _error = null;
     });
     try {
-      final response = await http.post(
+      final response = await _httpClient.post(
         _uri('/api/v1/training/examples/$id/approve'),
         headers: apiAuthHeaders(widget.apiToken),
       ).timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200) {
-        throw Exception('HTTP ${response.statusCode}: ${response.body}');
-      }
+      _checkResponse(response, expectedStatus: 200);
+      if (!mounted || _sessionExpired) return;
       await _loadTrainingData();
-      if (!mounted) return;
+      if (!mounted || _sessionExpired) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Đã duyệt ví dụ huấn luyện.')),
       );
     } catch (error) {
       if (mounted) {
-        setState(() => _error = 'Không duyệt được ví dụ: $error');
+        setState(() => _error = 'Không duyệt được ví dụ: ${_safeError(error, 'Đã xảy ra lỗi khi duyệt ví dụ.')}');
       }
     } finally {
       if (mounted) setState(() => _trainingActionIds.remove(id));
@@ -173,6 +209,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   }
 
   Future<void> _deleteTrainingExample(int id) async {
+    if (!mounted || _sessionExpired) return;
     if (_trainingActionIds.contains(id)) return;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -191,27 +228,26 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
+    if (confirmed != true || !mounted || _sessionExpired) return;
     setState(() {
       _trainingActionIds.add(id);
       _error = null;
     });
     try {
-      final response = await http.delete(
+      final response = await _httpClient.delete(
         _uri('/api/v1/training/examples/$id'),
         headers: apiAuthHeaders(widget.apiToken),
       ).timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200) {
-        throw Exception('HTTP ${response.statusCode}: ${response.body}');
-      }
+      _checkResponse(response, expectedStatus: 200);
+      if (!mounted || _sessionExpired) return;
       await _loadTrainingData();
-      if (!mounted) return;
+      if (!mounted || _sessionExpired) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Đã xóa ví dụ huấn luyện.')),
       );
     } catch (error) {
       if (mounted) {
-        setState(() => _error = 'Không xóa được ví dụ: $error');
+        setState(() => _error = 'Không xóa được ví dụ: ${_safeError(error, 'Đã xảy ra lỗi khi xóa ví dụ.')}');
       }
     } finally {
       if (mounted) setState(() => _trainingActionIds.remove(id));
@@ -219,26 +255,29 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   }
 
   Future<void> _copyTrainingExport() async {
+    if (!mounted || _sessionExpired) return;
     if (_exportingTraining) return;
     setState(() {
       _exportingTraining = true;
       _error = null;
     });
     try {
-      final response = await http.get(_uri('/api/v1/training/export'),
+      final response = await _httpClient.get(_uri('/api/v1/training/export'),
           headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200) throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      _checkResponse(response, expectedStatus: 200);
+      if (!mounted || _sessionExpired) return;
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
       await Clipboard.setData(ClipboardData(text: payload['content']?.toString() ?? ''));
-      if (!mounted) return;
+      if (!mounted || _sessionExpired) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã sao chép ${payload['count'] ?? 0} ví dụ đã duyệt dạng JSONL.')));
     } catch (error) {
-      if (mounted) setState(() => _error = 'Không xuất được dữ liệu: $error');
+      if (mounted) setState(() => _error = 'Không xuất được dữ liệu: ${_safeError(error, 'Đã xảy ra lỗi khi xuất dữ liệu.')}');
     } finally {
       if (mounted) setState(() => _exportingTraining = false);
     }
   }
   Future<void> _loadDocuments() async {
+    if (!mounted || _sessionExpired) return;
     final requestVersion = ++_documentsRequestVersion;
     final category = _categoryFilter;
     setState(() {
@@ -246,20 +285,19 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       _error = null;
     });
     try {
-      final response = await http.get(_uri('/api/v1/knowledge/documents', {
+      final response = await _httpClient.get(_uri('/api/v1/knowledge/documents', {
         'limit': '100',
         'offset': '0',
         if (category != 'all') 'category': category,
       }), headers: apiAuthHeaders(widget.apiToken)).timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200) {
-        throw Exception('Backend trả về HTTP ${response.statusCode}');
-      }
+      _checkResponse(response, expectedStatus: 200);
+      if (!mounted || _sessionExpired) return;
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
-      if (!mounted || requestVersion != _documentsRequestVersion) return;
+      if (requestVersion != _documentsRequestVersion) return;
       setState(() => _documents = payload['items'] as List<dynamic>? ?? []);
     } catch (error) {
       if (mounted && requestVersion == _documentsRequestVersion) {
-        setState(() => _error = 'Không tải được danh sách tài liệu: $error');
+        setState(() => _error = 'Không tải được danh sách tài liệu: ${_safeError(error, 'Đã xảy ra lỗi khi tải danh sách tài liệu.')}');
       }
     } finally {
       if (mounted && requestVersion == _documentsRequestVersion) {
@@ -269,6 +307,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   }
 
   Future<void> _pickAndUpload() async {
+    if (!mounted || _sessionExpired) return;
     if (_uploading) return;
     setState(() {
       _uploading = true;
@@ -279,18 +318,18 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         type: FileType.custom,
         allowedExtensions: const ['txt', 'md', 'csv', 'pdf'],
       );
-      if (!mounted || file == null) return;
+      if (!mounted || _sessionExpired || file == null) return;
       final fileLength = file.lengthSync() ?? await file.length();
       if (fileLength == null || fileLength <= 0) {
-        throw Exception('Không đọc được kích thước tệp trên thiết bị.');
+        throw const SafeApiException('Không đọc được kích thước tệp trên thiết bị.');
       }
       if (fileLength > 10 * 1024 * 1024) {
-        throw Exception('Tệp vượt quá giới hạn 10 MB.');
+        throw const SafeApiException('Tệp vượt quá giới hạn 10 MB.');
       }
       final bytes = await file.readAsBytes();
-      if (!mounted) return;
+      if (!mounted || _sessionExpired) return;
       if (bytes.isEmpty) {
-        throw Exception('Không đọc được nội dung tệp trên thiết bị.');
+        throw const SafeApiException('Không đọc được nội dung tệp trên thiết bị.');
       }
 
       final request = http.MultipartRequest(
@@ -307,35 +346,28 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         bytes,
         filename: file.name,
       ));
-      final streamed = await request.send().timeout(const Duration(seconds: 60));
+      final streamed = await _httpClient.send(request).timeout(const Duration(seconds: 60));
       final response = await http.Response.fromStream(streamed);
       if (response.statusCode == 409) {
-        throw Exception('Tài liệu này đã được nhập trước đó (trùng nội dung).');
+        throw const SafeApiException('Tài liệu này đã được nhập trước đó (trùng nội dung).');
       }
-      if (response.statusCode != 201) {
-        var detail = response.body;
-        try {
-          final payload = jsonDecode(response.body);
-          detail = payload is Map ? (payload['detail'] ?? payload).toString() : detail;
-        } catch (_) {
-          // Keep the raw backend response when it is not JSON.
-        }
-        throw Exception('HTTP ${response.statusCode}: $detail');
-      }
-      if (!mounted) return;
+      _checkResponse(response, expectedStatus: 201);
+      if (!mounted || _sessionExpired) return;
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Đã nhập "${payload['title'] ?? file.name}" vào kho tri thức.')),
       );
+      if (!mounted || _sessionExpired) return;
       await _loadDocuments();
     } catch (error) {
-      if (mounted) setState(() => _error = 'Không nhập được tài liệu: $error');
+      if (mounted) setState(() => _error = 'Không nhập được tài liệu: ${_safeError(error, 'Đã xảy ra lỗi khi nhập tài liệu.')}');
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
   }
 
   Future<void> _deleteDocument(Map<String, dynamic> document) async {
+    if (!mounted || _sessionExpired) return;
     final id = document['id'];
     if (id is! int || _documentActionIds.contains(id)) return;
     setState(() {
@@ -361,15 +393,13 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
           ],
         ),
       );
-      if (confirmed != true || !mounted) return;
-      final response = await http.delete(
+      if (confirmed != true || !mounted || _sessionExpired) return;
+      final response = await _httpClient.delete(
         _uri('/api/v1/knowledge/documents/$id'),
         headers: apiAuthHeaders(widget.apiToken),
       ).timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200) {
-        throw Exception('Backend trả về HTTP ${response.statusCode}');
-      }
-      if (!mounted) return;
+      _checkResponse(response, expectedStatus: 200);
+      if (!mounted || _sessionExpired) return;
       // Invalidate reads that may have started before this deletion completed.
       _documentsRequestVersion++;
       _searchRequestVersion++;
@@ -384,13 +414,14 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         const SnackBar(content: Text('Đã xóa tài liệu khỏi kho tri thức.')),
       );
     } catch (error) {
-      if (mounted) setState(() => _error = 'Không xóa được tài liệu: $error');
+      if (mounted) setState(() => _error = 'Không xóa được tài liệu: ${_safeError(error, 'Đã xảy ra lỗi khi xóa tài liệu.')}');
     } finally {
       if (mounted) setState(() => _documentActionIds.remove(id));
     }
   }
 
   Future<void> _search() async {
+    if (!mounted || _sessionExpired) return;
     final requestVersion = ++_searchRequestVersion;
     final query = _queryController.text.trim();
     if (query.isEmpty) {
@@ -406,7 +437,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       _searched = true;
     });
     try {
-      final response = await http.get(
+      final response = await _httpClient.get(
         _uri('/api/v1/knowledge/search', {
           'q': query,
           'top_k': '8',
@@ -414,18 +445,17 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         }),
         headers: apiAuthHeaders(widget.apiToken),
       ).timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200) {
-        throw Exception('Backend trả về HTTP ${response.statusCode}: ${response.body}');
-      }
+      _checkResponse(response, expectedStatus: 200);
+      if (!mounted || _sessionExpired) return;
       final payload = jsonDecode(response.body) as Map<String, dynamic>;
-      if (!mounted || requestVersion != _searchRequestVersion) return;
+      if (requestVersion != _searchRequestVersion) return;
       setState(() {
         _results = payload['results'] as List<dynamic>? ?? [];
         _context = payload['retrieval_context'] as Map<String, dynamic>?;
       });
     } catch (error) {
       if (mounted && requestVersion == _searchRequestVersion) {
-        setState(() => _error = 'Không tìm kiếm được: $error');
+        setState(() => _error = 'Không tìm kiếm được: ${_safeError(error, 'Đã xảy ra lỗi khi tìm kiếm.')}');
       }
     } finally {
       if (mounted && requestVersion == _searchRequestVersion) {
@@ -443,6 +473,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
 
   @override
   void dispose() {
+    if (_ownsHttpClient) _httpClient.close();
     _queryController.dispose();
     _trainingQuestionController.dispose();
     _trainingAnswerController.dispose();
