@@ -14,7 +14,7 @@ from .db import connection
 from .training_room import _citation_exists
 
 
-_TOKEN = re.compile(r"[^\\W_]+", re.UNICODE)
+_TOKEN = re.compile(r"[^\W_]+", re.UNICODE)
 
 
 def _tokens(value: str) -> Counter[str]:
