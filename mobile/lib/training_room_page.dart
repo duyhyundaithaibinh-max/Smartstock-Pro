@@ -550,6 +550,11 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
             ),
           ),
           const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Tra cứu kho tri thức', style: Theme.of(context).textTheme.titleLarge),
                   const SizedBox(height: 10),
