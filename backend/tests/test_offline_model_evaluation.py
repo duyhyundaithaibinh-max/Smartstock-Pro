@@ -74,6 +74,34 @@ def test_offline_evaluation_rejects_unapproved_examples(reviewed_example):
         }])
 
 
+def test_offline_evaluation_excludes_approved_examples_with_deleted_sources(reviewed_example):
+    # A source can be deleted after an example has been approved. Such an
+    # example must not inflate coverage or act as an invalid gold reference.
+    assert knowledge_base.delete_document(1)
+    knowledge_base.ingest_document(
+        "valid-source.md",
+        ("Fibonacci retracement levels are used as reference zones. " * 8).encode(),
+        source="internal_curriculum",
+        title="Fibonacci",
+    )
+    second_draft = training_room.create_example({
+        "question": "Fibonacci retracement dùng để làm gì?",
+        "expected_answer": "Fibonacci retracement levels are used as reference zones.",
+        "topic": "fibonacci",
+        "citation_ids": ["kb:2:0"],
+    })
+    second_approved = training_room.approve_example(second_draft["id"])
+
+    result = offline_model_evaluation.evaluate_predictions([{
+        "example_id": second_approved["id"],
+        "answer": second_approved["expected_answer"],
+        "citation_ids": ["kb:2:0"],
+    }])
+    assert result["approved_reference_examples"] == 1
+    assert result["predictions_evaluated"] == 1
+    assert result["coverage"] == 1.0
+
+
 def test_offline_evaluation_rejects_boolean_example_id():
     with pytest.raises(ValueError, match="positive integer"):
         offline_model_evaluation.evaluate_predictions([{
