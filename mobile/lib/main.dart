@@ -37,6 +37,7 @@ class _DashboardPageState extends State<DashboardPage> {
       TextEditingController(text: 'http://10.0.2.2:8000');
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _bootstrapSecretController = TextEditingController();
 
   String? _accessToken;
   bool _ownerInitialized = true;
@@ -99,20 +100,35 @@ class _DashboardPageState extends State<DashboardPage> {
       if (username.isEmpty || password.isEmpty) {
         throw Exception('Nhập tên đăng nhập và mật khẩu.');
       }
+      final bootstrapSecret = _bootstrapSecretController.text.trim();
       if (register && password.length < 12) {
         throw Exception('Mật khẩu cần tối thiểu 12 ký tự.');
+      }
+      if (register && (bootstrapSecret.length < 32 || bootstrapSecret.length > 256)) {
+        throw Exception('Bootstrap secret cần từ 32 đến 256 ký tự.');
       }
       if (register) {
         final setup = await http
             .post(
               Uri.parse('$_baseUrl/api/v1/auth/register-first-owner'),
               headers: {'Content-Type': 'application/json'},
-              body: jsonEncode({'username': username, 'password': password}),
+              body: jsonEncode({
+                'username': username,
+                'password': password,
+                'bootstrap_secret': bootstrapSecret,
+              }),
             )
             .timeout(const Duration(seconds: 15));
         if (setup.statusCode != 201) {
-          throw Exception('Không khởi tạo được tài khoản: ${setup.body}');
+          if (setup.statusCode == 403) {
+            throw Exception('Bootstrap secret không đúng hoặc đã được sử dụng. Hãy kiểm tra secret mới trên máy chủ.');
+          }
+          if (setup.statusCode == 422) {
+            throw Exception('Bootstrap secret chưa hợp lệ. Hãy nhập secret từ 32 đến 256 ký tự.');
+          }
+          throw Exception('Không khởi tạo được tài khoản (HTTP ${setup.statusCode}).');
         }
+        _bootstrapSecretController.clear();
       }
       final response = await http
           .post(
@@ -221,6 +237,7 @@ class _DashboardPageState extends State<DashboardPage> {
     _urlController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
+    _bootstrapSecretController.dispose();
     super.dispose();
   }
 
@@ -271,6 +288,21 @@ class _DashboardPageState extends State<DashboardPage> {
             textInputAction: TextInputAction.next,
           ),
           const SizedBox(height: 12),
+          if (canRegister) ...[
+            TextField(
+              controller: _bootstrapSecretController,
+              obscureText: true,
+              enableSuggestions: false,
+              autocorrect: false,
+              decoration: const InputDecoration(
+                labelText: 'Bootstrap secret khởi tạo',
+                helperText: 'Lấy trên máy chủ tin cậy bằng lệnh show_bootstrap_secret. Không gửi secret qua chat hoặc log.',
+                border: OutlineInputBorder(),
+              ),
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: 12),
+          ],
           TextField(
             controller: _passwordController,
             obscureText: true,
