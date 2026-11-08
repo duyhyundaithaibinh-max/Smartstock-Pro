@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.main import (
     api_token_is_valid,
-    protect_api_routes,
+    require_local_owner,
     validate_security_configuration,
 )
 
@@ -25,9 +25,8 @@ class ApiSecurityTests(unittest.TestCase):
     def test_empty_expected_token_never_authorizes(self):
         self.assertFalse(api_token_is_valid("Bearer anything", ""))
 
-    def test_production_requires_api_token(self):
-        with self.assertRaises(RuntimeError):
-            validate_security_configuration("production", "")
+    def test_production_allows_owner_session_without_legacy_api_token(self):
+        validate_security_configuration("production", "")
 
     def test_development_can_run_without_api_token(self):
         validate_security_configuration("development", "")
@@ -46,7 +45,7 @@ class ApiSecurityTests(unittest.TestCase):
 
 
 class ApiSecurityMiddlewareTests(unittest.IsolatedAsyncioTestCase):
-    def make_request(self, path, authorization=None):
+    def make_request(self, path, method="GET", authorization=None):
         headers = []
         if authorization is not None:
             headers.append((b"authorization", authorization.encode("utf-8")))
@@ -54,7 +53,7 @@ class ApiSecurityMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             "type": "http",
             "asgi": {"version": "3.0"},
             "http_version": "1.1",
-            "method": "GET",
+            "method": method,
             "scheme": "http",
             "path": path,
             "raw_path": path.encode("ascii"),
@@ -68,36 +67,57 @@ class ApiSecurityMiddlewareTests(unittest.IsolatedAsyncioTestCase):
     async def call_next(self, request):
         return JSONResponse({"reached_route": True})
 
-    async def test_api_route_rejects_missing_token(self):
-        with patch.dict(os.environ, {"SMARTSTOCK_API_TOKEN": "a" * 40}):
-            response = await protect_api_routes(
-                self.make_request("/api/v1/markets"), self.call_next
-            )
+    async def invoke(self, request):
+        with patch("app.main.auth.authenticate", return_value=None):
+            return await require_local_owner(request, self.call_next)
+
+    async def test_protected_write_rejects_missing_token(self):
+        response = await self.invoke(self.make_request("/api/v1/symbols", "POST"))
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.headers["www-authenticate"], "Bearer")
 
-    async def test_api_route_accepts_valid_token(self):
-        token = "b" * 40
+    async def test_protected_write_rejects_invalid_token(self):
+        with patch.dict(os.environ, {"SMARTSTOCK_API_TOKEN": "a" * 40}):
+            response = await self.invoke(
+                self.make_request("/api/v1/symbols", "POST", "Bearer " + "b" * 40)
+            )
+        self.assertEqual(response.status_code, 401)
+
+    async def test_protected_write_accepts_legacy_shared_token(self):
+        token = "c" * 40
         with patch.dict(os.environ, {"SMARTSTOCK_API_TOKEN": token}):
-            response = await protect_api_routes(
-                self.make_request("/api/v1/markets", f"Bearer {token}"),
+            response = await self.invoke(
+                self.make_request("/api/v1/symbols", "POST", f"Bearer {token}")
+            )
+        self.assertEqual(response.status_code, 200)
+
+    async def test_protected_write_accepts_authenticated_owner_session(self):
+        with patch("app.main.auth.authenticate", return_value={
+            "id": 1, "username": "owner", "role": "owner"
+        }):
+            response = await require_local_owner(
+                self.make_request("/api/v1/symbols", "POST", "Bearer owner-session"),
                 self.call_next,
             )
         self.assertEqual(response.status_code, 200)
 
-    async def test_health_route_remains_public_when_token_is_configured(self):
-        with patch.dict(os.environ, {"SMARTSTOCK_API_TOKEN": "c" * 40}):
-            response = await protect_api_routes(
-                self.make_request("/health"), self.call_next
-            )
-        self.assertEqual(response.status_code, 200)
+    async def test_health_and_market_reads_remain_public(self):
+        with patch.dict(os.environ, {"SMARTSTOCK_API_TOKEN": "d" * 40}):
+            health = await self.invoke(self.make_request("/health"))
+            markets = await self.invoke(self.make_request("/api/v1/markets"))
+            symbols = await self.invoke(self.make_request("/api/v1/symbols"))
+        self.assertEqual(health.status_code, 200)
+        self.assertEqual(markets.status_code, 200)
+        self.assertEqual(symbols.status_code, 200)
 
-    async def test_api_route_remains_available_without_development_token(self):
-        with patch.dict(os.environ, {}, clear=True):
-            response = await protect_api_routes(
-                self.make_request("/api/v1/markets"), self.call_next
-            )
-        self.assertEqual(response.status_code, 200)
+    async def test_auth_bootstrap_and_login_routes_remain_public_to_middleware(self):
+        for path in (
+            "/api/v1/auth/status",
+            "/api/v1/auth/register-first-owner",
+            "/api/v1/auth/login",
+        ):
+            response = await self.invoke(self.make_request(path, "POST"))
+            self.assertEqual(response.status_code, 200, path)
 
 
 if __name__ == "__main__":

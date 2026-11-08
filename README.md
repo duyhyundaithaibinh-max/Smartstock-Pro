@@ -25,14 +25,6 @@ Mở `http://127.0.0.1:8000/docs`.
 ## Chạy bằng Docker
 Tại thư mục gốc: `docker compose up --build`. API ở `http://localhost:8000`.
 
-## API security boundary
-
-- Development mode keeps API authentication disabled for a local MVP. Do not expose this mode to an untrusted network.
-- Enable shared Bearer-token protection by setting `SMARTSTOCK_API_TOKEN` in the environment. Android dashboard accepts the same token and sends it with API requests; the token remains in app memory and is not persisted.
-- Production startup fails closed if `SMARTSTOCK_ENV=production` and `SMARTSTOCK_API_TOKEN` is missing.
-- Example: copy `.env.example` to `.env`, generate a long random token, set `SMARTSTOCK_ENV=production` and `SMARTSTOCK_API_TOKEN`, then run Docker Compose.
-- This is a single shared API token, **not** per-user authentication, role-based access control, or document-level ownership. Do not use it as a substitute for a proper account/permission system in a multi-user deployment. Use HTTPS/TLS at the trusted reverse proxy when accessing over a network; do not commit real secrets.
-
 ## CSV OHLCV
 Header: `timestamp,open,high,low,close,volume`. Tạo mã qua `POST /api/v1/symbols`, sau đó gọi `POST /api/v1/candles/import-csv?symbol=FPT&source=licensed-provider` và đính kèm file CSV.
 
@@ -56,6 +48,19 @@ Nến tuần/tháng chỉ tổng hợp từ các phiên ngày có sẵn; hệ th
 - Xác minh điều chỉnh giá/corporate actions trước khi phân tích dài hạn.
 
 
+## Xác thực cục bộ (SP-019)
+- Lần khởi động backend đầu tiên, hệ thống tự tạo secret ngẫu nhiên dùng một lần trong file `bootstrap.secret` trên volume dữ liệu (quyền file 0600 trên POSIX); SQLite chỉ lưu SHA-256 của secret. Secret không được ghi log và không có API đọc secret.
+- Với Docker Compose, sau khi `docker compose up -d --build`, người vận hành đọc secret qua kênh quản trị máy chủ tin cậy: `docker compose exec api python -m scripts.show_bootstrap_secret`. Chỉ chạy lệnh này trên máy chủ đáng tin cậy và không gửi secret qua chat/log. Khi chạy backend trực tiếp, dùng `cd backend && python -m scripts.show_bootstrap_secret` sau lần khởi động đầu tiên.
+- Nhập secret này tại bước **Khởi tạo chủ sở hữu** trong ứng dụng Android; request gửi trường `bootstrap_secret`.
+- Secret được tiêu thụ nguyên tử cùng transaction tạo owner; request sai/thiếu/đã dùng bị từ chối. Sau khi tạo owner, file plaintext được xóa; nếu cleanup thất bại, cờ consumed trong SQLite vẫn chặn replay. Nếu mất file trước khi tạo owner, khởi động lại backend sẽ tự tạo secret mới và cập nhật hash; nếu owner đã tồn tại thì không cần secret nữa.
+- Chỉ một tài khoản chủ sở hữu được tạo trên mỗi cơ sở dữ liệu.
+- Tương thích ngược: `SMARTSTOCK_API_TOKEN` là legacy shared-token fallback **tùy chọn**; owner Bearer session hoạt động độc lập và luôn bảo vệ các API riêng tư. Nếu cấu hình legacy token, giá trị phải dài tối thiểu 32 ký tự ở mọi environment. Client/automation cũ chỉ dùng shared token cần giữ biến này trong cấu hình đến khi đã chuyển sang owner login/session; không xóa token khỏi deployment hiện hữu trước khi xác nhận đã chuyển đổi.
+- Mật khẩu được băm PBKDF2-HMAC-SHA256 với salt ngẫu nhiên; API không lưu mật khẩu gốc.
+- Phiên đăng nhập dùng bearer token ngẫu nhiên, chỉ lưu hash SHA-256 ở backend, hết hạn sau 14 ngày; đăng xuất thu hồi token.
+- Android chỉ giữ token trong bộ nhớ ứng dụng; đóng ứng dụng sẽ cần đăng nhập lại.
+- Các API ghi dữ liệu, watchlist, Knowledge Base, Training Room và quản lý phiên bản quy tắc yêu cầu đăng nhập. Một số API GET thị trường/báo cáo kỹ thuật vẫn công khai.
+- Đây là mô hình **single-owner cho máy chủ cục bộ**, chưa hỗ trợ nhiều người dùng hoặc phân quyền theo từng người. Không mở cổng ra Internet công cộng; nếu truy cập qua LAN, chỉ dùng mạng tin cậy và cấu hình firewall phù hợp. Kết nối HTTP hiện chưa mã hóa, vì vậy không nhập bootstrap secret qua Wi-Fi/mạng không tin cậy; cần bổ sung TLS trước khi dùng trên mạng không tin cậy. Chưa có rate-limit nên không coi đây là triển khai production public.
+
 ## Knowledge Base (SP-014)
 - Upload: `POST /api/v1/knowledge/documents?source=research-note` (multipart field `file`; optional `title`).
 - List: `GET /api/v1/knowledge/documents?limit=100&offset=0`.
@@ -69,35 +74,44 @@ Nến tuần/tháng chỉ tổng hợp từ các phiên ngày có sẵn; hệ th
 - Search indexed chunks: `GET /api/v1/knowledge/search?q=Elliott%20Wave&top_k=5`.
 - Each hit returns a stable citation ID (`kb:document_id:chunk_index`), source filename/title, source label, SHA-256 and character offsets.
 - The retrieval context is bounded to 12,000 characters and explicitly labels retrieved text as untrusted evidence; instructions embedded in source documents must not be followed.
-- Resolve a citation to the exact stored passage: `GET /api/v1/knowledge/citations/{document_id}/{chunk_index}`.
-- Current retrieval is deterministic BM25-style lexical matching, not semantic/vector search. It does not call an LLM or external service. Embeddings, model-backed generation and user/role-level document permissions remain future work.
+- Current retrieval is deterministic BM25-style lexical matching, not semantic/vector search. It does not call an LLM or external service. Embeddings and model-backed generation remain future work. The current app has single-owner authentication, not multi-user/role-level document permissions.
 
 ## Versioned analysis rules (SP-016 — foundation)
 - `GET /api/v1/analysis/rules` lists immutable rule versions and activation history.
 - `GET /api/v1/analysis/rules/active` returns the active version and canonical JSON configuration.
-- `GET /api/v1/analysis/rules/history` returns append-only activation events, including the previous version and configuration hash.
-- `POST /api/v1/analysis/rules` creates a draft using `{"version":"1.1.0","name":"Volume window experiment","description":"Draft","config":{"volume_flow":{"window":15}}}`.
+- `POST /api/v1/analysis/rules` creates a draft using `{"version":"1.1.0","name":"EMA experiment","description":"Draft","config":{"trend":{"ema_fast":20}}}`.
 - `POST /api/v1/analysis/rules/1.1.0/activate` activates an existing version and archives the prior active version.
 - Versions use MAJOR.MINOR.PATCH, are append-only, and include a SHA-256 hash of canonical JSON configuration. Existing versions cannot be overwritten.
-- The built-in `1.0.0` record preserves current defaults. Active configuration is applied by `/analysis/report` to price-action pivot/range lookback, pivot wing, volume-confirmation threshold and ATR breakout buffer; Fibonacci and Elliott lookback/pivot wing; volume-flow window; and EMA, RSI, MACD and ATR periods. The report returns the rule version and canonical configuration SHA-256. API access currently uses one shared Bearer token when enabled; per-user identity, roles and document ownership are not implemented.
+- The built-in `1.0.0` record preserves current defaults. Active configuration is applied by `/analysis/report` to Fibonacci lookback/pivot wing, Elliott lookback/pivot wing and volume-flow window; the report returns both rule version and configuration SHA-256. Price-action thresholds and indicator periods remain fixed defaults for now.
+- Rule management endpoints require the local owner bearer session.
 
 ## Rule version evaluation (SP-017 — foundation)
 - `GET /api/v1/analysis/rules/compare?symbol=FPT&versions=1.0.0,1.1.0&timeframe=1d&limit=500` compares 2–5 stored rule versions against the same locally stored OHLCV candles.
 - Output includes version/config hashes, input provenance, deterministic signatures (trend, breakout, Fibonacci, Elliott, volume-flow and scenario statuses) and only the fields that differ.
 - This is an output comparison, not a backtest: no simulated fills, returns, win rate, forecast accuracy or claim that a newer version is better. Out-of-sample datasets and predeclared evaluation criteria are required for performance claims.
 
-## Cài thử Android (APK debug)
+## AI Training Room (SP-018 — supervised dataset foundation)
+- Upload TXT/Markdown/CSV/text-PDF sources to the local knowledge base, then search to obtain stable citation IDs such as `kb:1:0`.
+- Create question/expected-answer examples in the Android Training Room. Each example must cite 1–10 existing knowledge chunks and starts in `draft`.
+- Review and approve examples manually. If a cited source chunk is deleted, the example cannot be approved and is excluded from JSONL export.
+- Dataset evaluation reports topic coverage, duplicates and approval counts. Initial local-model evaluation requires at least 10 approved, non-duplicate examples; this threshold is a starting gate, not a guarantee of model quality.
+- Export only approved examples as JSONL. This is supervised-data preparation, **not model fine-tuning**. No external AI API or paid model is called.
 
-1. Mở tab **Actions** của repository và chọn workflow run có commit cần thử; chỉ tải artifact `smartstock-pro-debug-apk` từ run có cả hai job `backend` và `android` thành công.
-2. Tải ZIP artifact, giải nén và lấy file `app-debug.apk`.
-3. Chuyển APK sang điện thoại Android, mở file và cho phép cài ứng dụng từ nguồn này nếu Android yêu cầu.
-4. Mở SmartStock Pro. Trong ô **Backend URL**, nhập địa chỉ máy tính đang chạy backend cùng mạng Wi-Fi, ví dụ `http://192.168.1.10:8000`, rồi nhấn **Kết nối backend**.
 
-### Kết nối điện thoại với backend
+## Bộ giáo trình khởi tạo AI (SP-020)
+- Thư mục `training/curriculum/` có 5 tài liệu Markdown biên soạn nội bộ: Elliott Wave, Fibonacci giá/thời gian, chu kỳ thị trường, volume/dòng tiền/breakout, dữ liệu cổ phiếu Việt Nam và quản trị rủi ro.
+- Nạp từng file vào Training Room; tra cứu để lấy citation ID thật; tạo câu hỏi/đáp án và duyệt thủ công. Không tự gán citation ID vì ID được tạo theo cơ sở dữ liệu của từng cài đặt.
+- Các tài liệu là giáo trình nội bộ, không phải nguồn dữ liệu thị trường hay khuyến nghị mua/bán.
 
-- Chạy backend trên máy tính và bind ra mạng LAN: `uvicorn app.main:app --host 0.0.0.0 --port 8000` (thực hiện trong thư mục `backend`).
-- Nếu dùng Docker Compose, chạy `docker compose up --build -d`; bảo đảm cổng TCP 8000 được mở trong firewall của máy tính.
-- Điện thoại và máy tính phải cùng mạng LAN/Wi-Fi. Thay địa chỉ ví dụ bằng IPv4 LAN thật của máy tính; không dùng `localhost` trên điện thoại. Địa chỉ `10.0.2.2` chỉ dành cho Android Emulator truy cập máy host.
-- Kiểm tra từ trình duyệt điện thoại bằng `http://<IP-LAN-máy-tính>:8000/health` trước khi kết nối trong ứng dụng.
+## Đánh giá đầu ra mô hình cục bộ (SP-021 — evaluator foundation)
+- `POST /api/v1/training/evaluation/predictions` yêu cầu owner bearer token.
+- Body: `{"predictions":[{"example_id":1,"answer":"...","citation_ids":["kb:1:0"]}]}`.
+- Chỉ chấm trên ví dụ `approved`; báo exact match, token precision/recall/F1, độ chính xác/độ bao phủ citation, citation ID không hợp lệ và coverage trên tập đã duyệt.
+- Endpoint không gọi model, không fine-tune, không dùng mạng hoặc API trả phí. Đây là bộ chấm tự động cơ bản; token overlap không đo được tính đúng ngữ nghĩa và citation hợp lệ về ID chưa chứng minh nội dung thực sự hỗ trợ câu trả lời. Cần holdout set và con người rà soát.
 
-**Lưu ý bảo mật:** APK lấy từ CI hiện là bản debug để kiểm thử, không phải bản phát hành ký số. Cấu hình HTTP không mã hóa chỉ được bật cho debug build; không đưa backend thử nghiệm ra Internet công cộng. Trước khi phát hành rộng rãi cần cấu hình HTTPS, ký release APK/AAB, kiểm thử trên thiết bị thật và bổ sung hướng dẫn cập nhật/gỡ cài đặt.
+### Nạp corpus và ví dụ mẫu vào SQLite
+Tại thư mục `backend/`, sau khi cài dependencies:
+```bash
+python -m scripts.ingest_curriculum
+```
+Script nạp 5 tài liệu Markdown và tạo tối đa 15 ví dụ hỏi–đáp ở trạng thái `draft`; có thể chạy lại an toàn (bỏ qua tài liệu/câu hỏi đã có). Citation ID được ghép theo chunk thực tế của từng tài liệu trong database. Người dùng phải đọc nguồn, rà soát câu trả lời và bấm **Duyệt** trong Training Room trước khi xuất JSONL. Script chỉ ghi SQLite cục bộ, không tải dữ liệu từ Internet.
