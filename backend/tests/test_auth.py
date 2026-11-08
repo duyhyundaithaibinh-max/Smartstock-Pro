@@ -65,6 +65,11 @@ class LocalAuthenticationTests(unittest.TestCase):
             response = client.get("/api/v1/training/examples")
             self.assertEqual(response.status_code, 401)
             self.assertEqual(response.headers.get("www-authenticate"), "Bearer")
+            evaluation = client.post(
+                "/api/v1/training/evaluation/predictions",
+                json={"predictions": []},
+            )
+            self.assertEqual(evaluation.status_code, 401)
 
     def test_first_owner_setup_and_login_through_api(self):
         with TestClient(app) as client:
