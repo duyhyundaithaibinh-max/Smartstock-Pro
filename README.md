@@ -58,7 +58,7 @@ Nến tuần/tháng chỉ tổng hợp từ các phiên ngày có sẵn; hệ th
 - Phiên đăng nhập dùng bearer token ngẫu nhiên, chỉ lưu hash SHA-256 ở backend, hết hạn sau 14 ngày; đăng xuất thu hồi token.
 - Android chỉ giữ token trong bộ nhớ ứng dụng; đóng ứng dụng sẽ cần đăng nhập lại.
 - Các API ghi dữ liệu, watchlist, Knowledge Base, Training Room và quản lý phiên bản quy tắc yêu cầu đăng nhập. Một số API GET thị trường/báo cáo kỹ thuật vẫn công khai.
-- Đây là mô hình **single-owner cho máy chủ cục bộ**, chưa hỗ trợ nhiều người dùng hoặc phân quyền theo từng người. Không mở cổng ra Internet công cộng; nếu truy cập qua LAN, chỉ dùng mạng tin cậy và cấu hình firewall phù hợp. Chưa có TLS/rate-limit nên không coi đây là triển khai production public.
+- Đây là mô hình **single-owner cho máy chủ cục bộ**, chưa hỗ trợ nhiều người dùng hoặc phân quyền theo từng người. Không mở cổng ra Internet công cộng; nếu truy cập qua LAN, chỉ dùng mạng tin cậy và cấu hình firewall phù hợp. Kết nối HTTP hiện chưa mã hóa, vì vậy không nhập bootstrap secret qua Wi-Fi/mạng không tin cậy; cần bổ sung TLS trước khi dùng trên mạng không tin cậy. Chưa có rate-limit nên không coi đây là triển khai production public.
 
 ## Knowledge Base (SP-014)
 - Upload: `POST /api/v1/knowledge/documents?source=research-note` (multipart field `file`; optional `title`).
