@@ -15,7 +15,7 @@ from app import db, knowledge_base, training_room
 ROOT = Path(__file__).resolve().parents[2]
 CURRICULUM = ROOT / "training" / "curriculum"
 SOURCE = "internal_curriculum_v1"
-TOKEN = re.compile(r"[^\\W_]+", re.UNICODE)
+TOKEN = re.compile(r"[^\W_]+", re.UNICODE)
 
 
 def tokens(text: str) -> Counter[str]:
