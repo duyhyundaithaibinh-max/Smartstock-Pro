@@ -101,3 +101,36 @@ Nến tuần/tháng chỉ tổng hợp từ các phiên ngày có sẵn; hệ th
 - Kiểm tra từ trình duyệt điện thoại bằng `http://<IP-LAN-máy-tính>:8000/health` trước khi kết nối trong ứng dụng.
 
 **Lưu ý bảo mật:** APK lấy từ CI hiện là bản debug để kiểm thử, không phải bản phát hành ký số. Cấu hình HTTP không mã hóa chỉ được bật cho debug build; không đưa backend thử nghiệm ra Internet công cộng. Trước khi phát hành rộng rãi cần cấu hình HTTPS, ký release APK/AAB, kiểm thử trên thiết bị thật và bổ sung hướng dẫn cập nhật/gỡ cài đặt.
+
+## Xác thực cục bộ (SP-019)
+- Lần chạy đầu, mở ứng dụng Android và chọn **Khởi tạo chủ sở hữu**; chỉ một tài khoản chủ sở hữu được tạo trên mỗi cơ sở dữ liệu.
+- Mật khẩu được băm PBKDF2-HMAC-SHA256 với salt ngẫu nhiên; API không lưu mật khẩu gốc.
+- Phiên đăng nhập dùng bearer token ngẫu nhiên, chỉ lưu hash SHA-256 ở backend, hết hạn sau 14 ngày; đăng xuất thu hồi token.
+- Android chỉ giữ token trong bộ nhớ ứng dụng; đóng ứng dụng sẽ cần đăng nhập lại.
+- Các API ghi dữ liệu, watchlist, Knowledge Base, Training Room và quản lý phiên bản quy tắc yêu cầu đăng nhập. Một số API GET thị trường/báo cáo kỹ thuật vẫn công khai.
+- Đây là mô hình **single-owner cho máy chủ cục bộ**, chưa hỗ trợ nhiều người dùng hoặc phân quyền theo từng người. Không mở cổng ra Internet công cộng; nếu truy cập qua LAN, chỉ dùng mạng tin cậy và cấu hình firewall phù hợp. Chưa có TLS/rate-limit nên không coi đây là triển khai production public.
+
+## AI Training Room (SP-018 — supervised dataset foundation)
+- Upload TXT/Markdown/CSV/text-PDF sources to the local knowledge base, then search to obtain stable citation IDs such as `kb:1:0`.
+- Create question/expected-answer examples in the Android Training Room. Each example must cite 1–10 existing knowledge chunks and starts in `draft`.
+- Review and approve examples manually. If a cited source chunk is deleted, the example cannot be approved and is excluded from JSONL export.
+- Dataset evaluation reports topic coverage, duplicates and approval counts. Initial local-model evaluation requires at least 10 approved, non-duplicate examples; this threshold is a starting gate, not a guarantee of model quality.
+- Export only approved examples as JSONL. This is supervised-data preparation, **not model fine-tuning**. No external AI API or paid model is called.
+
+## Bộ giáo trình khởi tạo AI (SP-020)
+- Thư mục `training/curriculum/` có 5 tài liệu Markdown biên soạn nội bộ: Elliott Wave, Fibonacci giá/thời gian, chu kỳ thị trường, volume/dòng tiền/breakout, dữ liệu cổ phiếu Việt Nam và quản trị rủi ro.
+- Nạp từng file vào Training Room; tra cứu để lấy citation ID thật; tạo câu hỏi/đáp án và duyệt thủ công. Không tự gán citation ID vì ID được tạo theo cơ sở dữ liệu của từng cài đặt.
+- Các tài liệu là giáo trình nội bộ, không phải nguồn dữ liệu thị trường hay khuyến nghị mua/bán.
+
+## Đánh giá đầu ra mô hình cục bộ (SP-021 — evaluator foundation)
+- `POST /api/v1/training/evaluation/predictions` yêu cầu owner bearer token.
+- Body: `{"predictions":[{"example_id":1,"answer":"...","citation_ids":["kb:1:0"]}]}`.
+- Chỉ chấm trên ví dụ `approved`; báo exact match, token precision/recall/F1, độ chính xác/độ bao phủ citation, citation ID không hợp lệ và coverage trên tập đã duyệt.
+- Endpoint không gọi model, không fine-tune, không dùng mạng hoặc API trả phí. Đây là bộ chấm tự động cơ bản; token overlap không đo được tính đúng ngữ nghĩa và citation hợp lệ về ID chưa chứng minh nội dung thực sự hỗ trợ câu trả lời. Cần holdout set và con người rà soát.
+
+### Nạp corpus và ví dụ mẫu vào SQLite
+Tại thư mục `backend/`, sau khi cài dependencies:
+```bash
+python -m scripts.ingest_curriculum
+```
+Script nạp 5 tài liệu Markdown và tạo tối đa 15 ví dụ hỏi–đáp ở trạng thái `draft`; có thể chạy lại an toàn (bỏ qua tài liệu/câu hỏi đã có). Citation ID được ghép theo chunk thực tế của từng tài liệu trong database. Người dùng phải đọc nguồn, rà soát câu trả lời và bấm **Duyệt** trong Training Room trước khi xuất JSONL. Script chỉ ghi SQLite cục bộ, không tải dữ liệu từ Internet.
