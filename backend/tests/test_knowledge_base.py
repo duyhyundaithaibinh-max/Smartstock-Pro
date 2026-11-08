@@ -31,7 +31,7 @@ class KnowledgeBaseTests(unittest.TestCase):
         self.assertLessEqual(first[1]["char_start"], first[0]["char_end"])
 
     def test_chunk_offsets_reference_original_text_including_whitespace_and_crlf(self):
-        source = "\\r\\n  Fibonacci retracement\\r\\n\\r\\nElliott Wave  "
+        source = "\r\n  Fibonacci retracement\r\n\r\nElliott Wave  "
         chunks = knowledge_base.chunk_text(source, chunk_size=100, overlap=10)
         self.assertEqual(len(chunks), 1)
         chunk = chunks[0]
