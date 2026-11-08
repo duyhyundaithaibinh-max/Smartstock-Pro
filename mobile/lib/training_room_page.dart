@@ -7,8 +7,6 @@ import 'package:http/http.dart' as http;
 
 import 'api_auth.dart';
 
-import 'api_auth.dart';
-
 /// Local knowledge retrieval and document management.
 /// Search results are source passages, not AI-generated answers.
 class TrainingRoomPage extends StatefulWidget {
