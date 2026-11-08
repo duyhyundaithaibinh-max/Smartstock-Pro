@@ -96,10 +96,17 @@ def ensure_bootstrap_secret() -> bool:
                 current = path.read_text(encoding="utf-8").strip()
             except OSError:
                 pass
+            permissions_are_private = True
+            if os.name == "posix":
+                try:
+                    permissions_are_private = not bool(path.stat().st_mode & 0o077)
+                except OSError:
+                    permissions_are_private = False
             if (
                 row is not None
                 and row["consumed_at"] is None
                 and current
+                and permissions_are_private
                 and hmac.compare_digest(
                     hashlib.sha256(current.encode("utf-8")).hexdigest(),
                     row["secret_sha256"],
