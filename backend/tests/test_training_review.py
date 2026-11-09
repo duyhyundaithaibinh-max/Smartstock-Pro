@@ -887,12 +887,22 @@ class TrainingReviewApiTests(unittest.TestCase):
                 "training_example_quality_reviews",
             )
         }
+        indexes = {
+            table: [tuple(row) for row in conn.execute(f'PRAGMA index_list("{table}")')]
+            for table in (
+                "training_examples", "training_example_review_events",
+                "training_example_quality_reviews",
+            )
+        }
         sequence = [
             tuple(row) for row in conn.execute(
                 "SELECT name,seq FROM sqlite_sequence ORDER BY name"
             )
         ]
-        return {"schema": schema, "data": data, "foreign_keys": foreign_keys, "sequence": sequence}
+        return {
+            "schema": schema, "data": data, "foreign_keys": foreign_keys,
+            "indexes": indexes, "sequence": sequence,
+        }
 
     def test_pr25_event_rebuild_faults_after_rename_and_after_copy_roll_back_exactly_then_retry(self):
         checkpoints = ("event_copy", "old_event_drop")
@@ -999,6 +1009,23 @@ class TrainingReviewApiTests(unittest.TestCase):
             ]
             self.assertEqual([row[0] for row in first_examples], [51, 52, 53])
             self.assertEqual([row[5] for row in first_examples], ["draft", "approved", "rejected"])
+            self.assertEqual([row[1] for row in first_examples], [
+                "Legacy draft question", "Already approved question", "Rejected question"
+            ])
+            self.assertEqual([row[2] for row in first_examples], [
+                "Legacy draft answer", "Approved answer", "Rejected answer"
+            ])
+            self.assertEqual([row[3] for row in first_examples], ["elliott", "fibonacci", "volume"])
+            self.assertEqual([row[4] for row in first_examples], [
+                '["kb:1:0"]', '["kb:2:0"]', '["kb:3:0"]'
+            ])
+            self.assertEqual([row[6] for row in first_examples], [2, 1, 1])
+            self.assertEqual([row[7] for row in first_examples], [
+                "2026-03-01T00:00:00", "2026-03-03T00:00:00", "2026-03-05T00:00:00"
+            ])
+            self.assertEqual([row[8] for row in first_examples], [
+                "2026-03-02T00:00:00", "2026-03-04T00:00:00", "2026-03-06T00:00:00"
+            ])
             migrated_events = [
                 tuple(row) for row in first.execute(
                     "SELECT id,example_id,action,reason,revision_from,revision_to,changed_fields,"
