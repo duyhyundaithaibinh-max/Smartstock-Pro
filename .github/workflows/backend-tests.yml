@@ -19,7 +19,12 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r backend/requirements.txt pytest httpx
-      - run: cd backend && pytest
+      - name: Run PR25 migration hardening selection (pass 1)
+        run: cd backend && pytest -q tests/test_training_review.py -k "pr25_event_rebuild or pr25_upgrade_fixture"
+      - name: Run PR25 migration hardening selection (pass 2)
+        run: cd backend && pytest -q tests/test_training_review.py -k "pr25_event_rebuild or pr25_upgrade_fixture"
+      - name: Run full Backend test suite
+        run: cd backend && pytest
 
   android:
     runs-on: ubuntu-latest
@@ -64,6 +69,9 @@ jobs:
       - name: Analyze Flutter code
         working-directory: mobile
         run: flutter analyze
+      - name: Run Training Room session 32 acceptance tests
+        working-directory: mobile
+        run: flutter test test/training_room_session32_test.dart --reporter expanded
       - name: Run focused Training Review reliability suite (pass 1)
         working-directory: mobile
         shell: bash
