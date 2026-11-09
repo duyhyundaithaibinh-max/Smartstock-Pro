@@ -152,7 +152,9 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
   Future<void> _edit() async {
     final id = widget.example['id'];
     if (id is! int || widget.example['status'] != 'draft' ||
-        _sessionExpired || _busy) return;
+        _sessionExpired || _busy) {
+      return;
+    }
     // Keep the card's actions disabled from dialog open through the PATCH,
     // including the stale-revision comparison loop.
     setState(() => _busy = true);
