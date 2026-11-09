@@ -151,7 +151,11 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
 
   Future<void> _edit() async {
     final id = widget.example['id'];
-    if (id is! int || widget.example['status'] != 'draft' || _sessionExpired) return;
+    if (id is! int || widget.example['status'] != 'draft' ||
+        _sessionExpired || _busy) return;
+    // Keep the card's actions disabled from dialog open through the PATCH,
+    // including the stale-revision comparison loop.
+    setState(() => _busy = true);
     var questionText = widget.example['question']?.toString() ?? '';
     var answerText = widget.example['expected_answer']?.toString() ?? '';
     var topicText = widget.example['topic']?.toString() ?? '';
@@ -274,6 +278,7 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_error(error))));
       }
     } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
