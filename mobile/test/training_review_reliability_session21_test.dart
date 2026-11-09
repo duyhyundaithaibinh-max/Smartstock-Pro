@@ -1,3 +1,5 @@
+// ignore_for_file: prefer_interpolation_to_compose_strings
+
 import 'dart:async';
 import 'dart:convert';
 
@@ -214,7 +216,8 @@ void main() {
       if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
       if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example(status: 'approved')], 'total': 1});
       if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
-      if (request.url.path.endsWith('/review-events')) return _json(200, {
+      if (request.url.path.endsWith('/review-events')) {
+        return _json(200, {
         'example_id': 21,
         'items': [
           {'id': 1, 'example_id': 21, 'action': 'future_action', 'reason': null,
@@ -227,7 +230,8 @@ void main() {
            'created_at': '2026-11-09T00:22:00Z'},
         ],
         'count': 2, 'total': 2, 'limit': 50, 'offset': 0,
-      });
+        });
+      }
       if (request.url.path.endsWith('/quality-reviews')) return _json(200, {'example_id': 21, 'items': [], 'count': 0});
       throw StateError('Unexpected route');
     });
