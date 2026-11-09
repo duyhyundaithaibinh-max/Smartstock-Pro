@@ -168,7 +168,7 @@ void main() {
     expect(requests, 2);
     expect(expiryCalls, 0);
     expect(find.text('Lịch sử review • ví dụ #21'), findsNothing);
-    expect(find.text('Không thể hoàn thành thao tác. Vui lòng thử lại.'), findsOneWidget);
+    expect(find.text('Không thể kết nối máy chủ. Vui lòng kiểm tra mạng và thử lại.'), findsOneWidget);
     expect(find.textContaining('PRIVATE-TIMEOUT'), findsNothing);
     expect(find.textContaining('PRIVATE-SOCKET'), findsNothing);
     expect(find.textContaining(_oldToken), findsNothing);
