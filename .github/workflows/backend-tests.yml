@@ -19,7 +19,12 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r backend/requirements.txt pytest httpx
-      - run: cd backend && pytest
+      - name: Run PR #25 migration fault-injection tests
+        run: cd backend && pytest -q tests/test_training_review.py -k "pr25_event_rebuild or pr25_upgrade_fixture"
+      - name: Repeat PR #25 migration tests for retryability
+        run: cd backend && pytest -q tests/test_training_review.py -k "pr25_event_rebuild or pr25_upgrade_fixture"
+      - name: Run full backend suite
+        run: cd backend && pytest
 
   android:
     runs-on: ubuntu-latest
