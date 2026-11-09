@@ -588,4 +588,40 @@ void main() {
     client.close();
   });
 
+
+
+  testWidgets('hard delete is separate and requires explicit confirmation', (tester) async {
+    var exists = true;
+    var deleteCalls = 0;
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') {
+        return _json(200, {'items': exists ? [_example()] : [], 'total': exists ? 1 : 0});
+      }
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.method == 'DELETE' && request.url.path == '/api/v1/training/examples/21') {
+        deleteCalls++;
+        exists = false;
+        return _json(200, {'example_id': 21, 'status': 'deleted'});
+      }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client);
+    await _visible(tester, 'Xóa');
+    await tester.tap(find.text('Xóa').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Xóa ví dụ huấn luyện?'), findsOneWidget);
+    await tester.tap(find.text('Hủy'));
+    await tester.pumpAndSettle();
+    expect(deleteCalls, 0);
+    await tester.tap(find.text('Xóa').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Xóa').last);
+    await tester.pumpAndSettle();
+    expect(deleteCalls, 1);
+    expect(find.text('Chờ duyệt'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
 }
