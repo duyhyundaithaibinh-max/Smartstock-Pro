@@ -557,6 +557,7 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
     return Wrap(spacing: 8, runSpacing: 4, children: [
       if (isDraft) ...[
         TextButton.icon(
+          key: ValueKey('training-approve-$id'),
           onPressed: (_busy || _sessionExpired) ? null : () => _run(widget.onApprove),
           icon: const Icon(Icons.verified_outlined), label: const Text('Duyệt')),
         TextButton.icon(

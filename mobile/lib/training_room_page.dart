@@ -14,6 +14,13 @@ typedef TrainingFileSaveCallback = Future<Uri?> Function({
   required Uint8List bytes,
 });
 
+class _TrainingDataRequestResult {
+  const _TrainingDataRequestResult({this.response, this.error, this.stackTrace});
+  final http.Response? response;
+  final Object? error;
+  final StackTrace? stackTrace;
+}
+
 /// Local knowledge retrieval and document management.
 /// Search results are source passages, not AI-generated answers.
 class TrainingRoomPage extends StatefulWidget {
@@ -100,6 +107,16 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   String _safeError(Object error, String fallback) =>
       safeApiErrorMessage(error, fallback: fallback);
 
+  Future<_TrainingDataRequestResult> _captureTrainingDataRequest(
+    Future<http.Response> Function() request,
+  ) async {
+    try {
+      return _TrainingDataRequestResult(response: await request());
+    } catch (error, stackTrace) {
+      return _TrainingDataRequestResult(error: error, stackTrace: stackTrace);
+    }
+  }
+
   Future<void> _loadTrainingData() async {
     if (!mounted || _sessionExpired) return;
     final requestVersion = ++_trainingDataRequestVersion;
@@ -109,25 +126,41 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       });
     }
     try {
-      final responses = await Future.wait([
-        _httpClient.get(
+      // Capture each bounded request as response-or-error so a sibling
+      // transport failure cannot hide an HTTP 401 from the other endpoint.
+      final results = await Future.wait<_TrainingDataRequestResult>([
+        _captureTrainingDataRequest(() => _httpClient.get(
           _uri('/api/v1/training/examples', {'limit': '100', 'offset': '0'}),
           headers: apiAuthHeaders(widget.apiToken),
-        ).timeout(const Duration(seconds: 20)),
-        _httpClient.get(
+        ).timeout(const Duration(seconds: 20))),
+        _captureTrainingDataRequest(() => _httpClient.get(
           _uri('/api/v1/training/evaluation'),
           headers: apiAuthHeaders(widget.apiToken),
-        ).timeout(const Duration(seconds: 20)),
+        ).timeout(const Duration(seconds: 20))),
       ]);
-      if (responses.any((response) => response.statusCode == 401)) {
-        if (!_sessionExpired) {
-          _sessionExpired = true;
-          widget.onSessionExpired?.call(widget.apiToken);
-        }
-        throw const ApiRequestException(401);
+
+      // A disposed page must not deliver a late session-expiry callback.
+      if (!mounted) return;
+
+      // Session expiry takes precedence over sibling HTTP/transport failures.
+      final unauthorized = results.where(
+        (result) => result.response?.statusCode == 401,
+      );
+      if (unauthorized.isNotEmpty) {
+        _checkResponse(unauthorized.first.response!, expectedStatus: 200);
       }
-      for (final response in responses) {
+
+      final responses = <http.Response>[];
+      for (final result in results) {
+        if (result.error != null) {
+          Error.throwWithStackTrace(
+            result.error!,
+            result.stackTrace ?? StackTrace.current,
+          );
+        }
+        final response = result.response!;
         _checkResponse(response, expectedStatus: 200);
+        responses.add(response);
       }
       if (!mounted || _sessionExpired) return;
       final examples = jsonDecode(responses[0].body) as Map<String, dynamic>;
@@ -136,6 +169,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       setState(() {
         _examples = examples['items'] as List<dynamic>? ?? [];
         _evaluation = evaluation;
+        _error = null;
       });
     } catch (error) {
       if (mounted && requestVersion == _trainingDataRequestVersion) {
@@ -209,8 +243,21 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Đã duyệt ví dụ huấn luyện.')),
       );
+    } on ApiRequestException catch (error) {
+      if (error.statusCode == 409 && mounted && !_sessionExpired) {
+        // Another reviewer may have changed this draft. Reconcile from the
+        // authoritative list; never retry the approve mutation automatically.
+        await _loadTrainingData();
+        if (mounted && !_sessionExpired && _error == null) {
+          setState(() => _error =
+              'Ví dụ đã được xử lý ở nơi khác. Danh sách đã được đồng bộ; không tự gửi lại thao tác.');
+        }
+      } else if (mounted && !_sessionExpired) {
+        setState(() => _error =
+            'Không duyệt được ví dụ: ${_safeError(error, 'Đã xảy ra lỗi khi duyệt ví dụ.')}');
+      }
     } catch (error) {
-      if (mounted) {
+      if (mounted && !_sessionExpired) {
         setState(() => _error = 'Không duyệt được ví dụ: ${_safeError(error, 'Đã xảy ra lỗi khi duyệt ví dụ.')}');
       }
     } finally {
@@ -868,21 +915,28 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                   const SizedBox(height: 6),
                   const Text('Tạo cặp câu hỏi–đáp án chuẩn dựa trên tài liệu đã nạp. Mỗi ví dụ phải gắn mã trích dẫn nguồn; ví dụ mới chờ duyệt và chỉ ví dụ đã duyệt mới được xuất.'),
                   const SizedBox(height: 12),
-                  TextField(controller: _trainingQuestionController, enabled: !_savingExample, maxLength: 1000, minLines: 2, maxLines: 3, decoration: const InputDecoration(labelText: 'Câu hỏi mẫu', helperText: 'Tối thiểu 10 ký tự', border: OutlineInputBorder())),
+                  TextField(key: const ValueKey('training-create-question'), controller: _trainingQuestionController, enabled: !_savingExample, maxLength: 1000, minLines: 2, maxLines: 3, decoration: const InputDecoration(labelText: 'Câu hỏi mẫu', helperText: 'Tối thiểu 10 ký tự', border: OutlineInputBorder())),
                   const SizedBox(height: 8),
-                  TextField(controller: _trainingAnswerController, enabled: !_savingExample, maxLength: 5000, minLines: 3, maxLines: 5, decoration: const InputDecoration(labelText: 'Đáp án chuẩn đã kiểm chứng', helperText: 'Tối thiểu 20 ký tự', border: OutlineInputBorder())),
+                  TextField(key: const ValueKey('training-create-answer'), controller: _trainingAnswerController, enabled: !_savingExample, maxLength: 5000, minLines: 3, maxLines: 5, decoration: const InputDecoration(labelText: 'Đáp án chuẩn đã kiểm chứng', helperText: 'Tối thiểu 20 ký tự', border: OutlineInputBorder())),
                   const SizedBox(height: 8),
-                  TextField(controller: _trainingTopicController, enabled: !_savingExample, maxLength: 80, decoration: const InputDecoration(labelText: 'Chủ đề', border: OutlineInputBorder())),
+                  TextField(key: const ValueKey('training-create-topic'), controller: _trainingTopicController, enabled: !_savingExample, maxLength: 80, decoration: const InputDecoration(labelText: 'Chủ đề', border: OutlineInputBorder())),
                   const SizedBox(height: 8),
-                  TextField(controller: _trainingCitationsController, enabled: !_savingExample, maxLength: 1000, decoration: const InputDecoration(labelText: 'Mã nguồn (kb:document:chunk)', helperText: 'Lấy citation_id từ kết quả tra cứu kho tri thức; phân tách nhiều mã bằng dấu phẩy.', border: OutlineInputBorder())),
+                  TextField(key: const ValueKey('training-create-citations'), controller: _trainingCitationsController, enabled: !_savingExample, maxLength: 1000, decoration: const InputDecoration(labelText: 'Mã nguồn (kb:document:chunk)', helperText: 'Lấy citation_id từ kết quả tra cứu kho tri thức; phân tách nhiều mã bằng dấu phẩy.', border: OutlineInputBorder())),
                   const SizedBox(height: 10),
-                  SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: _savingExample ? null : _saveTrainingExample, icon: const Icon(Icons.playlist_add), label: Text(_savingExample ? 'Đang lưu...' : 'Lưu ví dụ chờ duyệt'))),
+                  SizedBox(width: double.infinity, child: FilledButton.icon(key: const ValueKey('training-create-submit'), onPressed: _savingExample ? null : _saveTrainingExample, icon: const Icon(Icons.playlist_add), label: Text(_savingExample ? 'Đang lưu...' : 'Lưu ví dụ chờ duyệt'))),
                   const Divider(height: 24),
                   if (_trainingDataLoading) ...[
                     const LinearProgressIndicator(),
                     const SizedBox(height: 8),
                     const Text('Đang tải dữ liệu huấn luyện...'),
                   ],
+                  if (_evaluation == null && !_trainingDataLoading)
+                    OutlinedButton.icon(
+                      key: const ValueKey('training-data-retry'),
+                      onPressed: _sessionExpired ? null : _loadTrainingData,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Thử tải lại dữ liệu huấn luyện'),
+                    ),
                   if (_evaluation != null) ...[
                     Text('Tổng: ${_evaluation!['total_examples'] ?? 0} • Đã duyệt: ${_evaluation!['approved_examples'] ?? 0} • Chờ duyệt: ${_evaluation!['draft_examples'] ?? 0}'),
                     Text('Câu hỏi trùng: ${_evaluation!['duplicate_question_groups'] ?? 0} • Trạng thái: ${_evaluation!['readiness'] ?? '—'}'),
