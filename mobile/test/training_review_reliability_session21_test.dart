@@ -413,7 +413,16 @@ void main() {
       if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
       if (request.url.path.endsWith('/review-events')) {
         if (request.url.queryParameters['offset'] == '0') {
-          return _json(200, {'example_id': 21, 'items': [], 'count': 0, 'total': 1, 'limit': 1, 'offset': 0});
+          return _json(200, {
+            'example_id': 21,
+            'items': [{
+              'id': 1, 'example_id': 21, 'action': 'approved', 'reason': null,
+              'revision_from': 1, 'revision_to': 1, 'changed_fields': [],
+              'reviewer_user_id': 9, 'reviewer_label': 'Owner',
+              'created_at': '2026-11-09 00:21:00',
+            }],
+            'count': 1, 'total': 2, 'limit': 1, 'offset': 0,
+          });
         }
         return _json(200, {'items': [{'id': 'bad'}], 'offset': 1});
       }
