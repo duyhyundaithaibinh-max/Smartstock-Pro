@@ -1,0 +1,829 @@
+// ignore_for_file: prefer_interpolation_to_compose_strings
+
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:smartstock_pro/training_room_page.dart';
+
+const _token = 'session21-owner-token';
+
+Map<String, dynamic> _example({String status = 'draft', int revision = 1}) => {
+  'id': 21,
+  'question': 'Câu hỏi kiểm thử nội dung review phiên 21',
+  'expected_answer': 'Đáp án đã được xác minh bằng nguồn trích dẫn.',
+  'topic': 'technical_analysis',
+  'citation_ids': ['kb:8:3'],
+  'status': status,
+  'revision': revision,
+};
+
+http.Response _json(int status, Object value) => http.Response(
+  jsonEncode(value), status, headers: {'content-type': 'application/json'});
+
+Map<String, dynamic> _evaluation() => {
+  'total_examples': 1, 'approved_examples': 0, 'draft_examples': 1,
+  'rejected_examples': 0, 'duplicate_question_groups': 0,
+  'readiness': 'collect_and_review_more_examples',
+};
+
+Future<void> _pump(WidgetTester tester, MockClient client, {
+  void Function(String token)? onSessionExpired,
+}) async {
+  await tester.pumpWidget(MaterialApp(home: TrainingRoomPage(
+    baseUrl: 'http://test', apiToken: _token, httpClient: client,
+    onSessionExpired: onSessionExpired,
+  )));
+  await tester.pumpAndSettle();
+}
+
+Future<void> _visible(WidgetTester tester, String label) async {
+  await tester.scrollUntilVisible(
+    find.text(label), 250, scrollable: find.byType(Scrollable).first);
+  await tester.pumpAndSettle();
+}
+
+void main() {
+  testWidgets('reject cancel never sends POST or DELETE', (tester) async {
+    var mutations = 0;
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example()], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.method == 'POST' || request.method == 'DELETE') { mutations++; return _json(200, {}); }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client);
+    await _visible(tester, 'Từ chối');
+    await tester.tap(find.text('Từ chối'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Hủy'));
+    await tester.pumpAndSettle();
+    expect(mutations, 0);
+    expect(find.text('Đã từ chối'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('reject 401 expires active token once and never exposes body or token', (tester) async {
+    final expired = <String>[];
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example()], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.url.path.endsWith('/reject')) {
+        expect(request.headers['authorization'], 'Bearer ' + _token);
+        return http.Response('PRIVATE-TRACEBACK-' + _token, 401);
+      }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client, onSessionExpired: expired.add);
+    await _visible(tester, 'Từ chối');
+    await tester.tap(find.text('Từ chối'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('reject-reason')), 'Lý do hợp lệ để kiểm thử.');
+    await tester.tap(find.byKey(const ValueKey('reject-confirm')));
+    await tester.pumpAndSettle();
+    expect(expired, [_token]);
+    expect(find.textContaining('PRIVATE-TRACEBACK'), findsNothing);
+    expect(find.textContaining(_token), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('reject 403, 429 and 500 do not expire session or expose raw body', (tester) async {
+    for (final status in [403, 429, 500]) {
+      var expiryCalls = 0;
+      final client = MockClient((request) async {
+        if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+        if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example()], 'total': 1});
+        if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+        if (request.url.path.endsWith('/reject')) return http.Response('PRIVATE-RAW-' + _token, status);
+        throw StateError('Unexpected route');
+      });
+      await _pump(tester, client, onSessionExpired: (_) => expiryCalls++);
+      await _visible(tester, 'Từ chối');
+      await tester.tap(find.text('Từ chối'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const ValueKey('reject-reason')), 'Lý do hợp lệ để kiểm thử.');
+      await tester.tap(find.byKey(const ValueKey('reject-confirm')));
+      await tester.pumpAndSettle();
+      expect(expiryCalls, 0);
+      expect(find.textContaining('PRIVATE-RAW'), findsNothing);
+      expect(find.textContaining(_token), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      client.close();
+    }
+  });
+
+  testWidgets('edit keeps actions busy until PATCH completes', (tester) async {
+    final response = Completer<http.Response>();
+    var patchCalls = 0;
+    var example = _example();
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [example], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.method == 'PATCH') {
+        patchCalls++;
+        final result = await response.future;
+        example = {...example, 'topic': 'elliott', 'revision': 2};
+        return result;
+      }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client);
+    await _visible(tester, 'Sửa');
+    await tester.tap(find.text('Sửa'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('edit-topic')), 'elliott');
+    await tester.tap(find.byKey(const ValueKey('edit-save')));
+    await tester.pumpAndSettle();
+    expect(patchCalls, 1);
+    // The edit dialog is gone while PATCH is pending; the underlying card
+    // action is disabled until the request and any conflict flow finish.
+    expect(find.textContaining('Sửa ví dụ #21'), findsNothing);
+    await tester.tap(find.text('Sửa'));
+    await tester.pumpAndSettle();
+    expect(patchCalls, 1);
+    expect(find.textContaining('Sửa ví dụ #21'), findsNothing);
+    response.complete(_json(200, {..._example(revision: 2), 'topic': 'elliott'}));
+    await tester.pumpAndSettle();
+    expect(find.text('Revision 2'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('stale edit close preserves local draft and never retries automatically', (tester) async {
+    var patchCalls = 0;
+    var current = _example();
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [current], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.method == 'PATCH') {
+        patchCalls++;
+        current = {...current, 'topic': 'server-topic', 'revision': 2};
+        return _json(409, {'detail': 'STALE-PRIVATE-DETAIL'});
+      }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client);
+    await _visible(tester, 'Sửa');
+    await tester.tap(find.text('Sửa'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('edit-topic')), 'local-edit');
+    await tester.tap(find.byKey(const ValueKey('edit-save')));
+    await tester.pumpAndSettle();
+    expect(find.text('Revision đã thay đổi'), findsOneWidget);
+    expect(find.textContaining('local-edit'), findsWidgets);
+    expect(find.textContaining('STALE-PRIVATE-DETAIL'), findsNothing);
+    await tester.tap(find.text('Đóng'));
+    await tester.pumpAndSettle();
+    expect(patchCalls, 1);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('quality review accepts 100 on approved and does not change status', (tester) async {
+    Map<String, dynamic>? sent;
+    final approved = _example(status: 'approved');
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [approved], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.method == 'POST' && request.url.path.endsWith('/quality-reviews')) {
+        sent = jsonDecode(request.body) as Map<String, dynamic>;
+        return _json(201, {'id': 44, 'example_revision': 1, ...sent!});
+      }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client);
+    await _visible(tester, 'Human Quality Review');
+    await tester.tap(find.text('Human Quality Review'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('quality-score')), '100');
+    await tester.enterText(find.byKey(const ValueKey('quality-rationale')),
+      'Đạt toàn bộ tiêu chí đối chiếu nguồn và tính nhất quán.');
+    await tester.tap(find.byKey(const ValueKey('quality-submit')));
+    await tester.pumpAndSettle();
+    expect(sent, {
+      'score': 100, 'rubric_version': 'qa-quality-v1',
+      'rationale': 'Đạt toàn bộ tiêu chí đối chiếu nguồn và tính nhất quán.',
+    });
+    expect(find.text('Đã duyệt'), findsOneWidget);
+    expect(find.text('Đã từ chối'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('history tolerates empty quality history, future action and SQLite/ISO timestamps', (tester) async {
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example(status: 'approved')], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.url.path.endsWith('/review-events')) {
+        return _json(200, {
+        'example_id': 21,
+        'items': [
+          {'id': 1, 'example_id': 21, 'action': 'future_action', 'reason': null,
+           'revision_from': 1, 'revision_to': 1, 'changed_fields': [],
+           'reviewer_user_id': null, 'reviewer_label': 'System',
+           'created_at': '2026-11-09 00:21:00'},
+          {'id': 2, 'example_id': 21, 'action': 'approved', 'reason': null,
+           'revision_from': 1, 'revision_to': 1, 'changed_fields': [],
+           'reviewer_user_id': 9, 'reviewer_label': 'Owner',
+           'created_at': '2026-11-09T00:22:00Z'},
+        ],
+        'count': 2, 'total': 2, 'limit': 50, 'offset': 0,
+        });
+      }
+      if (request.url.path.endsWith('/quality-reviews')) return _json(200, {'example_id': 21, 'items': [], 'count': 0});
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client);
+    await _visible(tester, 'Lịch sử');
+    await tester.tap(find.text('Lịch sử'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sự kiện review • revision 1 → 1'), findsOneWidget);
+    expect(find.text('Đã duyệt • revision 1 → 1'), findsOneWidget);
+    expect(find.textContaining('2026-11-09 00:21:00'), findsOneWidget);
+    expect(find.textContaining('2026-11-09T00:22:00Z'), findsOneWidget);
+    expect(find.text('Chưa có đánh giá chất lượng thủ công.'), findsOneWidget);
+    await tester.tap(find.text('Đóng'));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('malformed history response is sanitized', (tester) async {
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example(status: 'approved')], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.url.path.endsWith('/review-events')) return http.Response('MALFORMED-SECRET-' + _token, 200);
+      if (request.url.path.endsWith('/quality-reviews')) return _json(200, {'items': [], 'count': 0});
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client);
+    await _visible(tester, 'Lịch sử');
+    await tester.tap(find.text('Lịch sử'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('MALFORMED-SECRET'), findsNothing);
+    expect(find.textContaining(_token), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('history 403 is a permission error, not session expiry', (tester) async {
+    var expiryCalls = 0;
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example(status: 'approved')], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.url.path.endsWith('/review-events')) return _json(403, {'detail': 'PRIVATE'});
+      if (request.url.path.endsWith('/quality-reviews')) return _json(200, {'items': [], 'count': 0});
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client, onSessionExpired: (_) => expiryCalls++);
+    await _visible(tester, 'Lịch sử');
+    await tester.tap(find.text('Lịch sử'));
+    await tester.pumpAndSettle();
+    expect(expiryCalls, 0);
+    expect(find.text('SmartStock Pro • Đăng nhập'), findsNothing);
+    expect(find.textContaining('PRIVATE'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+
+  testWidgets('reject accepts a trimmed 1000-character reason at the boundary', (tester) async {
+    Map<String, dynamic>? body;
+    final reason = 'x' * 1000;
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example()], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.url.path.endsWith('/reject')) {
+        body = jsonDecode(request.body) as Map<String, dynamic>;
+        return _json(200, {..._example(status: 'rejected')});
+      }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client);
+    await _visible(tester, 'Từ chối');
+    await tester.tap(find.text('Từ chối'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('reject-reason')), reason);
+    await tester.tap(find.byKey(const ValueKey('reject-confirm')));
+    await tester.pumpAndSettle();
+    expect((body?['reason'] as String?)?.length, 1000);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('reject timeout keeps session and sanitizes exception details', (tester) async {
+    var expiryCalls = 0;
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example()], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.url.path.endsWith('/reject')) throw TimeoutException('PRIVATE-TIMEOUT-' + _token);
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client, onSessionExpired: (_) => expiryCalls++);
+    await _visible(tester, 'Từ chối');
+    await tester.tap(find.text('Từ chối'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('reject-reason')), 'Lý do hợp lệ để kiểm thử.');
+    await tester.tap(find.byKey(const ValueKey('reject-confirm')));
+    await tester.pumpAndSettle();
+    expect(expiryCalls, 0);
+    expect(find.textContaining('PRIVATE-TIMEOUT'), findsNothing);
+    expect(find.textContaining(_token), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('edit 422 shows safe validation feedback and no false success', (tester) async {
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example()], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.method == 'PATCH') return http.Response('PRIVATE-VALIDATION-TRACEBACK', 422);
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client);
+    await _visible(tester, 'Sửa');
+    await tester.tap(find.text('Sửa'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('edit-topic')), 'changed-topic');
+    await tester.tap(find.byKey(const ValueKey('edit-save')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('PRIVATE-VALIDATION-TRACEBACK'), findsNothing);
+    expect(find.text('Đã lưu phiên bản mới của ví dụ.'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('quality review protected 401 expires owner session once', (tester) async {
+    var expiryCalls = 0;
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example(status: 'rejected')], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.url.path.endsWith('/quality-reviews') && request.method == 'POST') {
+        expect(request.headers['authorization'], 'Bearer ' + _token);
+        return http.Response('QUALITY-PRIVATE-TOKEN-' + _token, 401);
+      }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client, onSessionExpired: (_) => expiryCalls++);
+    await _visible(tester, 'Human Quality Review');
+    await tester.tap(find.text('Human Quality Review'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('quality-score')), '0');
+    await tester.enterText(find.byKey(const ValueKey('quality-rationale')), 'Đánh giá thủ công để kiểm tra xác thực.');
+    await tester.tap(find.byKey(const ValueKey('quality-submit')));
+    await tester.pumpAndSettle();
+    expect(expiryCalls, 1);
+    expect(find.textContaining('QUALITY-PRIVATE-TOKEN'), findsNothing);
+    expect(find.textContaining(_token), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('missing example history 404 is sanitized and does not create a history dialog', (tester) async {
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example(status: 'approved')], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.url.path.endsWith('/review-events')) return _json(404, {'detail': 'MISSING-PRIVATE-DETAIL'});
+      if (request.url.path.endsWith('/quality-reviews')) return _json(200, {'items': [], 'count': 0});
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client);
+    await _visible(tester, 'Lịch sử');
+    await tester.tap(find.text('Lịch sử'));
+    await tester.pumpAndSettle();
+    expect(find.text('Lịch sử review • ví dụ #21'), findsNothing);
+    expect(find.textContaining('MISSING-PRIVATE-DETAIL'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('review history pagination rejects a malformed next-page envelope', (tester) async {
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example(status: 'approved')], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.url.path.endsWith('/review-events')) {
+        if (request.url.queryParameters['offset'] == '0') {
+          return _json(200, {
+            'example_id': 21,
+            'items': [{
+              'id': 1, 'example_id': 21, 'action': 'approved', 'reason': null,
+              'revision_from': 1, 'revision_to': 1, 'changed_fields': [],
+              'reviewer_user_id': 9, 'reviewer_label': 'Owner',
+              'created_at': '2026-11-09 00:21:00',
+            }],
+            'count': 1, 'total': 2, 'limit': 1, 'offset': 0,
+          });
+        }
+        return _json(200, {'items': [{'id': 'bad'}], 'offset': 1});
+      }
+      if (request.url.path.endsWith('/quality-reviews')) return _json(200, {'example_id': 21, 'items': [], 'count': 0});
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client);
+    await _visible(tester, 'Lịch sử');
+    await tester.tap(find.text('Lịch sử'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Tải thêm lịch sử'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('PRIVATE'), findsNothing);
+    expect(find.text('Tải thêm lịch sử'), findsOneWidget);
+    await tester.tap(find.text('Đóng'));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('quality history malformed items are rejected without leaking response data', (tester) async {
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example(status: 'approved')], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.url.path.endsWith('/review-events')) {
+        return _json(200, {
+          'example_id': 21, 'items': [], 'count': 0, 'total': 0, 'limit': 50, 'offset': 0,
+        });
+      }
+      if (request.url.path.endsWith('/quality-reviews')) {
+        return _json(200, {'example_id': 21, 'items': 'QUALITY-HISTORY-PRIVATE', 'count': 1});
+      }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client);
+    await _visible(tester, 'Lịch sử');
+    await tester.tap(find.text('Lịch sử'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('QUALITY-HISTORY-PRIVATE'), findsNothing);
+    expect(find.text('Lịch sử review • ví dụ #21'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+
+
+  testWidgets('concurrent history responses prioritize 401 over sibling 403', (tester) async {
+    var expiryCalls = 0;
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example(status: 'approved')], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.url.path.endsWith('/review-events')) return http.Response('EVENT-FORBIDDEN-PRIVATE', 403);
+      if (request.url.path.endsWith('/quality-reviews')) return http.Response('QUALITY-EXPIRED-PRIVATE', 401);
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client, onSessionExpired: (_) => expiryCalls++);
+    await _visible(tester, 'Lịch sử');
+    await tester.tap(find.text('Lịch sử'));
+    await tester.pumpAndSettle();
+    expect(expiryCalls, 1);
+    expect(find.textContaining('EVENT-FORBIDDEN-PRIVATE'), findsNothing);
+    expect(find.textContaining('QUALITY-EXPIRED-PRIVATE'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+
+
+  testWidgets('unmount during an edit PATCH does not update disposed widgets', (tester) async {
+    final response = Completer<http.Response>();
+    var patchCalls = 0;
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example()], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.method == 'PATCH') {
+        patchCalls++;
+        return response.future;
+      }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client);
+    await _visible(tester, 'Sửa');
+    await tester.tap(find.text('Sửa'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('edit-topic')), 'unmount-check');
+    await tester.tap(find.byKey(const ValueKey('edit-save')));
+    await tester.pumpAndSettle();
+    expect(patchCalls, 1);
+    await tester.pumpWidget(const SizedBox.shrink());
+    response.complete(_json(200, {..._example(revision: 2), 'topic': 'unmount-check'}));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    client.close();
+  });
+
+  testWidgets('quality review is available on draft and leaves draft status unchanged', (tester) async {
+    Map<String, dynamic>? sent;
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example(status: 'draft')], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.method == 'POST' && request.url.path.endsWith('/quality-reviews')) {
+        sent = jsonDecode(request.body) as Map<String, dynamic>;
+        return _json(201, {'id': 51, 'example_id': 21, 'example_revision': 1, ...sent!});
+      }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client);
+    await _visible(tester, 'Human Quality Review');
+    await tester.tap(find.text('Human Quality Review'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('quality-score')), '50');
+    await tester.enterText(find.byKey(const ValueKey('quality-rationale')),
+      'Đánh giá thủ công trên bản nháp để xác nhận status không đổi.');
+    await tester.tap(find.byKey(const ValueKey('quality-submit')));
+    await tester.pumpAndSettle();
+    expect(sent?['score'], 50);
+    expect(find.text('Chờ duyệt'), findsOneWidget);
+    expect(find.text('Đã duyệt'), findsNothing);
+    expect(find.text('Đã từ chối'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('quality history rejects malformed row fields before rendering', (tester) async {
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example(status: 'approved')], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.url.path.endsWith('/review-events')) {
+        return _json(200, {
+          'example_id': 21, 'items': [], 'count': 0, 'total': 0, 'limit': 50, 'offset': 0,
+        });
+      }
+      if (request.url.path.endsWith('/quality-reviews')) {
+        return _json(200, {
+          'example_id': 21,
+          'items': [{'id': 1, 'example_id': 21, 'score': '100'}],
+          'count': 1,
+        });
+      }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client);
+    await _visible(tester, 'Lịch sử');
+    await tester.tap(find.text('Lịch sử'));
+    await tester.pumpAndSettle();
+    expect(find.text('Lịch sử review • ví dụ #21'), findsNothing);
+    expect(find.textContaining('score'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+
+
+  testWidgets('hard delete is separate and requires explicit confirmation', (tester) async {
+    var exists = true;
+    var deleteCalls = 0;
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') {
+        return _json(200, {'items': exists ? [_example()] : [], 'total': exists ? 1 : 0});
+      }
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.method == 'DELETE' && request.url.path == '/api/v1/training/examples/21') {
+        deleteCalls++;
+        exists = false;
+        return _json(200, {'example_id': 21, 'status': 'deleted'});
+      }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client);
+    await _visible(tester, 'Xóa');
+    await tester.tap(find.text('Xóa').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Xóa ví dụ huấn luyện?'), findsOneWidget);
+    await tester.tap(find.text('Hủy'));
+    await tester.pumpAndSettle();
+    expect(deleteCalls, 0);
+    await tester.tap(find.text('Xóa').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Xóa').last);
+    await tester.pumpAndSettle();
+    expect(deleteCalls, 1);
+    expect(find.text('Chờ duyệt'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+
+  testWidgets('history 401 takes precedence over sibling TimeoutException', (tester) async {
+    final expired = <String>[];
+    var historyRequests = 0;
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example(status: 'approved')], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.url.path.endsWith('/review-events')) {
+        historyRequests++;
+        throw TimeoutException('PRIVATE-TIMEOUT-' + _token);
+      }
+      if (request.url.path.endsWith('/quality-reviews')) {
+        historyRequests++;
+        return http.Response('PRIVATE-401-' + _token, 401);
+      }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client, onSessionExpired: expired.add);
+    await _visible(tester, 'Lịch sử');
+    await tester.tap(find.text('Lịch sử'));
+    await tester.pumpAndSettle();
+    expect(historyRequests, 2);
+    expect(expired, [_token]);
+    expect(find.text('Lịch sử review • ví dụ #21'), findsNothing);
+    expect(find.textContaining('PRIVATE-TIMEOUT'), findsNothing);
+    expect(find.textContaining('PRIVATE-401'), findsNothing);
+    expect(find.textContaining(_token), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('history 401 takes precedence over sibling SocketException', (tester) async {
+    final expired = <String>[];
+    var historyRequests = 0;
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example(status: 'approved')], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.url.path.endsWith('/review-events')) {
+        historyRequests++;
+        throw SocketException('PRIVATE-SOCKET-' + _token);
+      }
+      if (request.url.path.endsWith('/quality-reviews')) {
+        historyRequests++;
+        return http.Response('PRIVATE-401-' + _token, 401);
+      }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client, onSessionExpired: expired.add);
+    await _visible(tester, 'Lịch sử');
+    await tester.tap(find.text('Lịch sử'));
+    await tester.pumpAndSettle();
+    expect(historyRequests, 2);
+    expect(expired, [_token]);
+    expect(find.textContaining('PRIVATE-SOCKET'), findsNothing);
+    expect(find.textContaining('PRIVATE-401'), findsNothing);
+    expect(find.textContaining(_token), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('history 401 is retained when sibling transport failure finishes first', (tester) async {
+    final expired = <String>[];
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example(status: 'approved')], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.url.path.endsWith('/review-events')) {
+        throw TimeoutException('PRIVATE-FIRST-FAILURE');
+      }
+      if (request.url.path.endsWith('/quality-reviews')) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        return http.Response('PRIVATE-LATE-401', 401);
+      }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client, onSessionExpired: expired.add);
+    await _visible(tester, 'Lịch sử');
+    await tester.tap(find.text('Lịch sử'));
+    await tester.pumpAndSettle();
+    expect(expired, [_token]);
+    expect(find.textContaining('PRIVATE-FIRST-FAILURE'), findsNothing);
+    expect(find.textContaining('PRIVATE-LATE-401'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('history 401 takes precedence over sibling HTTP 500', (tester) async {
+    final expired = <String>[];
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example(status: 'approved')], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.url.path.endsWith('/review-events')) return http.Response('PRIVATE-500', 500);
+      if (request.url.path.endsWith('/quality-reviews')) return http.Response('PRIVATE-401', 401);
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client, onSessionExpired: expired.add);
+    await _visible(tester, 'Lịch sử');
+    await tester.tap(find.text('Lịch sử'));
+    await tester.pumpAndSettle();
+    expect(expired, [_token]);
+    expect(find.textContaining('PRIVATE-500'), findsNothing);
+    expect(find.textContaining('PRIVATE-401'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('history transport failures without 401 remain sanitized and do not expire session', (tester) async {
+    var expiryCalls = 0;
+    var historyRequests = 0;
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example(status: 'approved')], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.url.path.endsWith('/review-events')) {
+        historyRequests++;
+        throw SocketException('PRIVATE-TRANSPORT-' + _token);
+      }
+      if (request.url.path.endsWith('/quality-reviews')) {
+        historyRequests++;
+        throw TimeoutException('PRIVATE-TIMEOUT-' + _token);
+      }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client, onSessionExpired: (_) => expiryCalls++);
+    await _visible(tester, 'Lịch sử');
+    await tester.tap(find.text('Lịch sử'));
+    await tester.pumpAndSettle();
+    expect(historyRequests, 2);
+    expect(expiryCalls, 0);
+    expect(find.text('Lịch sử review • ví dụ #21'), findsNothing);
+    expect(find.textContaining('PRIVATE-TRANSPORT'), findsNothing);
+    expect(find.textContaining('PRIVATE-TIMEOUT'), findsNothing);
+    expect(find.textContaining(_token), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('history expiry callback is idempotent when both requests return 401', (tester) async {
+    final expired = <String>[];
+    var historyRequests = 0;
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example(status: 'approved')], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.url.path.endsWith('/review-events') || request.url.path.endsWith('/quality-reviews')) {
+        historyRequests++;
+        return http.Response('PRIVATE-401-' + _token, 401);
+      }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client, onSessionExpired: expired.add);
+    await _visible(tester, 'Lịch sử');
+    await tester.tap(find.text('Lịch sử'));
+    await tester.pumpAndSettle();
+    expect(historyRequests, 2);
+    expect(expired, [_token]);
+    expect(find.textContaining('PRIVATE-401'), findsNothing);
+    expect(find.textContaining(_token), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('history stale-token callback cannot expire a newer active session', (tester) async {
+    const activeToken = 'newer-active-owner-token';
+    var activeSession = true;
+    final callbackTokens = <String>[];
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example(status: 'approved')], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.url.path.endsWith('/review-events')) return http.Response('PRIVATE-401', 401);
+      if (request.url.path.endsWith('/quality-reviews')) {
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+        throw SocketException('PRIVATE-SOCKET');
+      }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client, onSessionExpired: (token) {
+      callbackTokens.add(token);
+      if (token == activeToken) activeSession = false;
+    });
+    await _visible(tester, 'Lịch sử');
+    await tester.tap(find.text('Lịch sử'));
+    await tester.pumpAndSettle();
+    expect(callbackTokens, [_token]);
+    expect(activeSession, isTrue);
+    expect(callbackTokens.where((token) => token == activeToken), isEmpty);
+    expect(find.textContaining('PRIVATE-401'), findsNothing);
+    expect(find.textContaining('PRIVATE-SOCKET'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+}
