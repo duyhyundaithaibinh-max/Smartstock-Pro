@@ -905,7 +905,7 @@ class TrainingReviewApiTests(unittest.TestCase):
         }
 
     def test_pr25_event_rebuild_faults_after_rename_and_after_copy_roll_back_exactly_then_retry(self):
-        checkpoints = ("event_copy", "old_event_drop")
+        checkpoints = ("event_copy", "old_event_drop", "event_trigger")
         for checkpoint in checkpoints:
             with self.subTest(checkpoint=checkpoint):
                 path = Path(self.temp_dir.name) / f"pr25-{checkpoint}.db"
@@ -925,6 +925,13 @@ class TrainingReviewApiTests(unittest.TestCase):
                         checkpoint == "old_event_drop"
                         and action == sqlite3.SQLITE_DROP_TABLE
                         and arg1 == "training_example_review_events_old"
+                    ):
+                        injected["hit"] = True
+                        return sqlite3.SQLITE_DENY
+                    if (
+                        checkpoint == "event_trigger"
+                        and action == sqlite3.SQLITE_CREATE_TRIGGER
+                        and arg1 == "trg_training_review_events_no_update"
                     ):
                         injected["hit"] = True
                         return sqlite3.SQLITE_DENY
