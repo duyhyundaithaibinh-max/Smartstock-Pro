@@ -1,3 +1,5 @@
+// ignore_for_file: prefer_interpolation_to_compose_strings, prefer_const_constructors
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
