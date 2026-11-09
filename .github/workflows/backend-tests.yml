@@ -64,7 +64,56 @@ jobs:
       - name: Analyze Flutter code
         working-directory: mobile
         run: flutter analyze
-      - name: Run Flutter tests
+      - name: Run focused Training Review reliability suite (pass 1)
+        working-directory: mobile
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/smartstock-focused"
+          failed=0
+          for test_file in \
+            test/training_review_reliability_session23_test.dart \
+            test/training_review_reliability_session25_test.dart \
+            test/training_review_reliability_session26_test.dart; do
+            log="$RUNNER_TEMP/smartstock-focused/pass-1-$(basename "$test_file").log"
+            echo "=== FOCUSED PASS 1: $test_file ==="
+            set +e
+            flutter test "$test_file" --reporter expanded 2>&1 | tee "$log"
+            test_status=${PIPESTATUS[0]}
+            set -e
+            printf 'EXIT_CODE=%s\n' "$test_status" | tee -a "$log"
+            if [ "$test_status" -ne 0 ]; then failed=1; fi
+          done
+          exit "$failed"
+      - name: Run focused Training Review reliability suite (pass 2)
+        working-directory: mobile
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/smartstock-focused"
+          failed=0
+          for test_file in \
+            test/training_review_reliability_session23_test.dart \
+            test/training_review_reliability_session25_test.dart \
+            test/training_review_reliability_session26_test.dart; do
+            log="$RUNNER_TEMP/smartstock-focused/pass-2-$(basename "$test_file").log"
+            echo "=== FOCUSED PASS 2: $test_file ==="
+            set +e
+            flutter test "$test_file" --reporter expanded 2>&1 | tee "$log"
+            test_status=${PIPESTATUS[0]}
+            set -e
+            printf 'EXIT_CODE=%s\n' "$test_status" | tee -a "$log"
+            if [ "$test_status" -ne 0 ]; then failed=1; fi
+          done
+          exit "$failed"
+      - name: Upload focused reliability logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: training-review-focused-reliability-logs
+          path: ${{ runner.temp }}/smartstock-focused/*.log
+          if-no-files-found: warn
+      - name: Run full Flutter test suite
         working-directory: mobile
         run: flutter test
       - name: Build debug APK (retry transient Gradle repository failures)
