@@ -500,4 +500,92 @@ void main() {
     client.close();
   });
 
+
+
+  testWidgets('unmount during an edit PATCH does not update disposed widgets', (tester) async {
+    final response = Completer<http.Response>();
+    var patchCalls = 0;
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example()], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.method == 'PATCH') {
+        patchCalls++;
+        return response.future;
+      }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client);
+    await _visible(tester, 'Sửa');
+    await tester.tap(find.text('Sửa'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('edit-topic')), 'unmount-check');
+    await tester.tap(find.byKey(const ValueKey('edit-save')));
+    await tester.pumpAndSettle();
+    expect(patchCalls, 1);
+    await tester.pumpWidget(const SizedBox.shrink());
+    response.complete(_json(200, {..._example(revision: 2), 'topic': 'unmount-check'}));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    client.close();
+  });
+
+  testWidgets('quality review is available on draft and leaves draft status unchanged', (tester) async {
+    Map<String, dynamic>? sent;
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example(status: 'draft')], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.method == 'POST' && request.url.path.endsWith('/quality-reviews')) {
+        sent = jsonDecode(request.body) as Map<String, dynamic>;
+        return _json(201, {'id': 51, 'example_id': 21, 'example_revision': 1, ...sent!});
+      }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client);
+    await _visible(tester, 'Human Quality Review');
+    await tester.tap(find.text('Human Quality Review'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('quality-score')), '50');
+    await tester.enterText(find.byKey(const ValueKey('quality-rationale')),
+      'Đánh giá thủ công trên bản nháp để xác nhận status không đổi.');
+    await tester.tap(find.byKey(const ValueKey('quality-submit')));
+    await tester.pumpAndSettle();
+    expect(sent?['score'], 50);
+    expect(find.text('Chờ duyệt'), findsOneWidget);
+    expect(find.text('Đã duyệt'), findsNothing);
+    expect(find.text('Đã từ chối'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('quality history rejects malformed row fields before rendering', (tester) async {
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example(status: 'approved')], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.url.path.endsWith('/review-events')) {
+        return _json(200, {
+          'example_id': 21, 'items': [], 'count': 0, 'total': 0, 'limit': 50, 'offset': 0,
+        });
+      }
+      if (request.url.path.endsWith('/quality-reviews')) {
+        return _json(200, {
+          'example_id': 21,
+          'items': [{'id': 1, 'example_id': 21, 'score': '100'}],
+          'count': 1,
+        });
+      }
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client);
+    await _visible(tester, 'Lịch sử');
+    await tester.tap(find.text('Lịch sử'));
+    await tester.pumpAndSettle();
+    expect(find.text('Lịch sử review • ví dụ #21'), findsNothing);
+    expect(find.textContaining('score'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
 }
