@@ -411,6 +411,11 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
           headers: headers).timeout(const Duration(seconds: 20))),
       ]);
 
+      // A disposed page must not expire a session or surface errors after its
+      // route has gone away. The parent token guard remains the second line
+      // of defense for stale callbacks while this guard prevents late callbacks.
+      if (!mounted) return;
+
       // Protected-session expiry has precedence over every sibling result:
       // HTTP 403/5xx, TimeoutException, SocketException or another transport
       // failure. _check is idempotent for this widget and passes its own token
