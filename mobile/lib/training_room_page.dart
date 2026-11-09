@@ -169,6 +169,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       setState(() {
         _examples = examples['items'] as List<dynamic>? ?? [];
         _evaluation = evaluation;
+        _error = null;
       });
     } catch (error) {
       if (mounted && requestVersion == _trainingDataRequestVersion) {

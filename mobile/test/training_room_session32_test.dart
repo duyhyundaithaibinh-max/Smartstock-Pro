@@ -43,10 +43,10 @@ Future<void> _pump(WidgetTester tester, MockClient client, {
 
 Future<void> _fillCreate(WidgetTester tester) async {
   final values = <String, String>{
-    'training-create-question': _question,
-    'training-create-answer': _answer,
-    'training-create-topic': 'fibonacci',
-    'training-create-citations': 'kb:7:2',
+    'training-create-question': '  $_question  ',
+    'training-create-answer': '  $_answer  ',
+    'training-create-topic': ' fibonacci ',
+    'training-create-citations': ' kb:7:2 ',
   };
   for (final entry in values.entries) {
     final finder = find.byKey(ValueKey(entry.key));
