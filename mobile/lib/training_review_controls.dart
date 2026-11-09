@@ -7,6 +7,14 @@ import 'package:http/http.dart' as http;
 
 import 'api_auth.dart';
 
+class _HistoryRequestResult {
+  const _HistoryRequestResult({this.response, this.error, this.stackTrace});
+
+  final http.Response? response;
+  final Object? error;
+  final StackTrace? stackTrace;
+}
+
 class TrainingReviewControls extends StatefulWidget {
   const TrainingReviewControls({
     super.key,
@@ -374,24 +382,55 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
     });
   }
 
+  Future<_HistoryRequestResult> _captureHistoryRequest(
+    Future<http.Response> Function() request,
+  ) async {
+    try {
+      return _HistoryRequestResult(response: await request());
+    } catch (error, stackTrace) {
+      // Preserve the failure as data so a sibling HTTP 401 is still observed.
+      return _HistoryRequestResult(error: error, stackTrace: stackTrace);
+    }
+  }
+
   Future<void> _history() async {
     final id = widget.example['id'];
     if (id is! int || _sessionExpired) return;
     await _run(() async {
       final headers = apiAuthHeaders(widget.apiToken);
-      final responses = await Future.wait([
-        widget.httpClient.get(_uri('/api/v1/training/examples/' + id.toString() + '/review-events',
-          {'limit': '50', 'offset': '0'}), headers: headers).timeout(const Duration(seconds: 20)),
-        widget.httpClient.get(_uri('/api/v1/training/examples/' + id.toString() + '/quality-reviews'),
-          headers: headers).timeout(const Duration(seconds: 20)),
+      // Convert each request into a response-or-error result. Future.wait now
+      // waits for both bounded requests without letting one transport exception
+      // discard a sibling HTTP 401 response.
+      final results = await Future.wait<_HistoryRequestResult>([
+        _captureHistoryRequest(() => widget.httpClient.get(
+          _uri('/api/v1/training/examples/' + id.toString() + '/review-events',
+            {'limit': '50', 'offset': '0'}), headers: headers)
+          .timeout(const Duration(seconds: 20))),
+        _captureHistoryRequest(() => widget.httpClient.get(
+          _uri('/api/v1/training/examples/' + id.toString() + '/quality-reviews'),
+          headers: headers).timeout(const Duration(seconds: 20))),
       ]);
-      // A concurrent protected 401 must take precedence over a sibling 403/5xx,
-      // so session expiry cannot be masked by response ordering.
-      final unauthorized = responses.where((response) => response.statusCode == 401);
+
+      // Protected-session expiry has precedence over every sibling result:
+      // HTTP 403/5xx, TimeoutException, SocketException or another transport
+      // failure. _check is idempotent for this widget and passes its own token
+      // to the parent, whose active-token identity guard remains authoritative.
+      final unauthorized = results.where(
+        (result) => result.response?.statusCode == 401);
       if (unauthorized.isNotEmpty) {
-        _check(unauthorized.first, 200);
+        _check(unauthorized.first.response!, 200);
       }
-      for (final response in responses) { _check(response, 200); }
+
+      final responses = <http.Response>[];
+      for (final result in results) {
+        if (result.error != null) {
+          Error.throwWithStackTrace(
+            result.error!, result.stackTrace ?? StackTrace.current);
+        }
+        final response = result.response!;
+        _check(response, 200);
+        responses.add(response);
+      }
       final page = jsonDecode(responses[0].body);
       final qualityPage = jsonDecode(responses[1].body);
       if (page is! Map<String, dynamic> || page['items'] is! List ||
