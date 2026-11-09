@@ -200,6 +200,123 @@ void main() {
     client.close();
   });
 
+  testWidgets('create rejects invalid and duplicate citation payloads without POST', (tester) async {
+    var postCount = 0;
+    final expired = <String>[];
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples' && request.method == 'GET') return _json(200, _list([]));
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.method == 'POST' && request.url.path == '/api/v1/training/examples') {
+        postCount++;
+        return _json(201, _example());
+      }
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+    await _pump(tester, client, onSessionExpired: expired.add);
+    final cases = <Map<String, String>>[
+      {'question': 'short', 'answer': _answer, 'citations': 'kb:7:2'},
+      {'question': _question, 'answer': 'short answer', 'citations': 'kb:7:2'},
+      {'question': _question, 'answer': _answer, 'citations': ''},
+      {'question': _question, 'answer': _answer, 'citations': 'not-a-citation'},
+      {'question': _question, 'answer': _answer, 'citations': 'kb:7:2, kb:7:2'},
+      {'question': _question, 'answer': _answer,
+        'citations': List.generate(11, (i) => 'kb:${i + 1}:0').join(', ')},
+    ];
+    for (final value in cases) {
+      await tester.enterText(find.byKey(const ValueKey('training-create-question')), value['question']!);
+      await tester.enterText(find.byKey(const ValueKey('training-create-answer')), value['answer']!);
+      await tester.enterText(find.byKey(const ValueKey('training-create-topic')), 'fibonacci');
+      await tester.enterText(find.byKey(const ValueKey('training-create-citations')), value['citations']!);
+      final submit = find.byKey(const ValueKey('training-create-submit'));
+      await tester.ensureVisible(submit);
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
+      expect(postCount, 0);
+      expect(find.textContaining('Câu hỏi cần'), findsOneWidget);
+    }
+    expect(expired, isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('create 422 is sanitized and retains the draft for a deliberate retry', (tester) async {
+    var postCount = 0;
+    var listCalls = 0;
+    final expired = <String>[];
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples' && request.method == 'GET') {
+        listCalls++;
+        return _json(200, _list(listCalls == 1 ? [] : [_example()]));
+      }
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation(total: listCalls > 1 ? 1 : 0, draft: listCalls > 1 ? 1 : 0));
+      if (request.method == 'POST' && request.url.path == '/api/v1/training/examples') {
+        postCount++;
+        if (postCount == 1) return http.Response('PRIVATE_CREATE_422_BODY', 422);
+        return _json(201, _example());
+      }
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+    await _pump(tester, client, onSessionExpired: expired.add);
+    await _fillCreate(tester);
+    final submit = find.byKey(const ValueKey('training-create-submit'));
+    await tester.tap(submit);
+    await tester.pumpAndSettle();
+    expect(postCount, 1);
+    expect(expired, isEmpty);
+    expect(find.textContaining('PRIVATE_CREATE_422_BODY'), findsNothing);
+    expect(tester.widget<TextField>(find.byKey(const ValueKey('training-create-question'))).controller!.text.trim(), _question);
+    expect(find.text('Đã lưu ví dụ ở trạng thái chờ duyệt.'), findsNothing);
+    await tester.tap(submit);
+    await tester.pumpAndSettle();
+    expect(postCount, 2);
+    expect(listCalls, 2);
+    expect(find.text(_question), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('list requests exact owner page and renders draft approved rejected states', (tester) async {
+    http.Request? listRequest;
+    http.Request? evaluationRequest;
+    final items = <Map<String, dynamic>>[
+      {..._example(id: 41), 'question': 'Draft row unique question'},
+      {..._example(id: 42, status: 'approved'), 'question': 'Approved row unique question'},
+      {..._example(id: 43, status: 'rejected'), 'question': 'Rejected row unique question'},
+    ];
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') {
+        listRequest = request;
+        return _json(200, _list(items));
+      }
+      if (request.url.path == '/api/v1/training/evaluation') {
+        evaluationRequest = request;
+        return _json(200, _evaluation(total: 3, draft: 1, approved: 1));
+      }
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+    await _pump(tester, client);
+    expect(listRequest, isNotNull);
+    expect(listRequest!.method, 'GET');
+    expect(listRequest!.url.path, '/api/v1/training/examples');
+    expect(listRequest!.url.queryParameters, {'limit': '100', 'offset': '0'});
+    expect(listRequest!.headers['authorization'], 'Bearer $_token');
+    expect(evaluationRequest, isNotNull);
+    expect(evaluationRequest!.method, 'GET');
+    expect(evaluationRequest!.url.path, '/api/v1/training/evaluation');
+    expect(evaluationRequest!.headers['authorization'], 'Bearer $_token');
+    expect(find.text('Draft row unique question'), findsOneWidget);
+    expect(find.text('Approved row unique question'), findsOneWidget);
+    expect(find.text('Rejected row unique question'), findsOneWidget);
+    expect(find.text('Chờ duyệt'), findsOneWidget);
+    expect(find.text('Đã duyệt'), findsOneWidget);
+    expect(find.text('Đã từ chối'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
   testWidgets('create trims owner payload and refreshes list after 201', (tester) async {
     var listCalls = 0;
     http.Request? createRequest;
@@ -330,6 +447,8 @@ void main() {
     expect(postCount, 1);
     expect(expired, [_token]);
     expect(find.textContaining('PRIVATE_CREATE_401_BODY'), findsNothing);
+    expect(tester.widget<TextField>(find.byKey(const ValueKey('training-create-question'))).controller!.text.trim(), _question);
+    expect(find.text('Đã lưu ví dụ ở trạng thái chờ duyệt.'), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     client.close();
@@ -396,6 +515,8 @@ void main() {
     await tester.tap(approve);
     await tester.pump();
     expect(tester.widget<TextButton>(approve).onPressed, isNull);
+    expect(tester.widget<TextButton>(find.widgetWithText(TextButton, 'Sửa')).onPressed, isNull);
+    expect(tester.widget<TextButton>(find.widgetWithText(TextButton, 'Từ chối')).onPressed, isNull);
     await tester.tap(approve, warnIfMissed: false);
     await tester.pump();
     expect(postCount, 1);
@@ -503,6 +624,7 @@ void main() {
     expect(postCount, 1);
     expect(expired, [_token]);
     expect(find.textContaining('PRIVATE_APPROVE_401_BODY'), findsNothing);
+    expect(find.text('Đã duyệt ví dụ huấn luyện.'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
     client.close();
   });
