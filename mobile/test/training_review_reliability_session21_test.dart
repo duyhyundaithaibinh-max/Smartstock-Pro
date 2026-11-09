@@ -448,9 +448,11 @@ void main() {
       if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
       if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example(status: 'approved')], 'total': 1});
       if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
-      if (request.url.path.endsWith('/review-events')) return _json(200, {
-        'example_id': 21, 'items': [], 'count': 0, 'total': 0, 'limit': 50, 'offset': 0,
-      });
+      if (request.url.path.endsWith('/review-events')) {
+        return _json(200, {
+          'example_id': 21, 'items': [], 'count': 0, 'total': 0, 'limit': 50, 'offset': 0,
+        });
+      }
       if (request.url.path.endsWith('/quality-reviews')) {
         return _json(200, {'example_id': 21, 'items': 'QUALITY-HISTORY-PRIVATE', 'count': 1});
       }
