@@ -435,7 +435,7 @@ void main() {
         }
         return _json(200, {'items': [{'id': 'bad'}], 'offset': 1});
       }
-      if (request.url.path.endsWith('/quality-reviews')) return _json(200, {'items': [], 'count': 0});
+      if (request.url.path.endsWith('/quality-reviews')) return _json(200, {'example_id': 21, 'items': [], 'count': 0});
       throw StateError('Unexpected route');
     });
     await _pump(tester, client);
