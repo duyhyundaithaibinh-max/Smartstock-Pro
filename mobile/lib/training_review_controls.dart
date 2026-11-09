@@ -357,6 +357,12 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
         widget.httpClient.get(_uri('/api/v1/training/examples/' + id.toString() + '/quality-reviews'),
           headers: headers).timeout(const Duration(seconds: 20)),
       ]);
+      // A concurrent protected 401 must take precedence over a sibling 403/5xx,
+      // so session expiry cannot be masked by response ordering.
+      final unauthorized = responses.where((response) => response.statusCode == 401);
+      if (unauthorized.isNotEmpty) {
+        _check(unauthorized.first, 200);
+      }
       for (final response in responses) { _check(response, 200); }
       final page = jsonDecode(responses[0].body);
       final qualityPage = jsonDecode(responses[1].body);
