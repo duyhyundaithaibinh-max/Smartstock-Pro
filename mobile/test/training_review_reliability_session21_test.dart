@@ -135,10 +135,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const ValueKey('edit-topic')), 'elliott');
     await tester.tap(find.byKey(const ValueKey('edit-save')));
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(patchCalls, 1);
+    // The edit dialog is gone while PATCH is pending; the underlying card
+    // action is disabled until the request and any conflict flow finish.
+    expect(find.textContaining('Sửa ví dụ #21'), findsNothing);
     await tester.tap(find.text('Sửa'));
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(patchCalls, 1);
     expect(find.textContaining('Sửa ví dụ #21'), findsNothing);
     response.complete(_json(200, {..._example(revision: 2), 'topic': 'elliott'}));
