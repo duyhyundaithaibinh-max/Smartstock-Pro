@@ -457,4 +457,27 @@ void main() {
     client.close();
   });
 
+
+
+  testWidgets('concurrent history responses prioritize 401 over sibling 403', (tester) async {
+    var expiryCalls = 0;
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example(status: 'approved')], 'total': 1});
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.url.path.endsWith('/review-events')) return http.Response('EVENT-FORBIDDEN-PRIVATE', 403);
+      if (request.url.path.endsWith('/quality-reviews')) return http.Response('QUALITY-EXPIRED-PRIVATE', 401);
+      throw StateError('Unexpected route');
+    });
+    await _pump(tester, client, onSessionExpired: (_) => expiryCalls++);
+    await _visible(tester, 'Lịch sử');
+    await tester.tap(find.text('Lịch sử'));
+    await tester.pumpAndSettle();
+    expect(expiryCalls, 1);
+    expect(find.textContaining('EVENT-FORBIDDEN-PRIVATE'), findsNothing);
+    expect(find.textContaining('QUALITY-EXPIRED-PRIVATE'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
 }
