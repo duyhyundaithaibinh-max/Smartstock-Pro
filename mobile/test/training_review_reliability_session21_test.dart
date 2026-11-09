@@ -122,11 +122,17 @@ void main() {
   testWidgets('edit keeps actions busy until PATCH completes', (tester) async {
     final response = Completer<http.Response>();
     var patchCalls = 0;
+    var example = _example();
     final client = MockClient((request) async {
       if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
-      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [_example()], 'total': 1});
+      if (request.url.path == '/api/v1/training/examples') return _json(200, {'items': [example], 'total': 1});
       if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
-      if (request.method == 'PATCH') { patchCalls++; return response.future; }
+      if (request.method == 'PATCH') {
+        patchCalls++;
+        final result = await response.future;
+        example = {...example, 'topic': 'elliott', 'revision': 2};
+        return result;
+      }
       throw StateError('Unexpected route');
     });
     await _pump(tester, client);
