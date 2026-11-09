@@ -222,7 +222,7 @@ void main() {
            'reviewer_user_id': null, 'reviewer_label': 'System',
            'created_at': '2026-11-09 00:21:00'},
           {'id': 2, 'example_id': 21, 'action': 'approved', 'reason': null,
-           'revision_from': 1, 'revision_to': 1, 'changed_fields:': [],
+           'revision_from': 1, 'revision_to': 1, 'changed_fields': [],
            'reviewer_user_id': 9, 'reviewer_label': 'Owner',
            'created_at': '2026-11-09T00:22:00Z'},
         ],
