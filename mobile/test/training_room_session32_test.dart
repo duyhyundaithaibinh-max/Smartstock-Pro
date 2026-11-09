@@ -224,10 +224,16 @@ void main() {
         'citations': List.generate(11, (i) => 'kb:${i + 1}:0').join(', ')},
     ];
     for (final value in cases) {
-      await tester.enterText(find.byKey(const ValueKey('training-create-question')), value['question']!);
-      await tester.enterText(find.byKey(const ValueKey('training-create-answer')), value['answer']!);
-      await tester.enterText(find.byKey(const ValueKey('training-create-topic')), 'fibonacci');
-      await tester.enterText(find.byKey(const ValueKey('training-create-citations')), value['citations']!);
+      for (final entry in <String, String>{
+        'training-create-question': value['question']!,
+        'training-create-answer': value['answer']!,
+        'training-create-topic': 'fibonacci',
+        'training-create-citations': value['citations']!,
+      }.entries) {
+        final field = find.byKey(ValueKey(entry.key));
+        await tester.ensureVisible(field);
+        await tester.enterText(field, entry.value);
+      }
       final submit = find.byKey(const ValueKey('training-create-submit'));
       await tester.ensureVisible(submit);
       await tester.tap(submit);
@@ -337,6 +343,7 @@ void main() {
       fail('Unexpected request: ${request.method} ${request.url}');
     });
     await _pump(tester, client);
+    expect(find.textContaining('Chưa có ví dụ huấn luyện.'), findsOneWidget);
     await _fillCreate(tester);
     await tester.tap(find.byKey(const ValueKey('training-create-submit')));
     await tester.pumpAndSettle();
