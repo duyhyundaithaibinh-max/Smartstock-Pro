@@ -57,6 +57,34 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
   String _error(Object error) => safeApiErrorMessage(
     error, fallback: 'Không thể hoàn thành thao tác. Vui lòng thử lại.');
 
+  bool _validReviewEvent(dynamic value) {
+    if (value is! Map<String, dynamic>) return false;
+    final fields = value['changed_fields'];
+    return value['id'] is int &&
+        value['example_id'] is int &&
+        value['action'] is String &&
+        (value['reason'] == null || value['reason'] is String) &&
+        value['revision_from'] is int &&
+        value['revision_to'] is int &&
+        fields is List && fields.every((field) => field is String) &&
+        (value['reviewer_user_id'] == null || value['reviewer_user_id'] is int) &&
+        value['reviewer_label'] is String &&
+        value['created_at'] is String;
+  }
+
+  bool _validQualityReview(dynamic value) {
+    if (value is! Map<String, dynamic>) return false;
+    final score = value['score'];
+    return value['id'] is int &&
+        value['example_id'] is int &&
+        value['example_revision'] is int &&
+        score is int && score >= 0 && score <= 100 &&
+        value['rubric_version'] is String &&
+        value['rationale'] is String &&
+        (value['reviewer_user_id'] == null || value['reviewer_user_id'] is int) &&
+        value['reviewed_at'] is String;
+  }
+
   Future<void> _run(Future<void> Function() action) async {
     if (!mounted || _busy || _sessionExpired) return;
     setState(() => _busy = true);
@@ -151,7 +179,13 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
 
   Future<void> _edit() async {
     final id = widget.example['id'];
-    if (id is! int || widget.example['status'] != 'draft' || _sessionExpired) return;
+    if (id is! int || widget.example['status'] != 'draft' ||
+        _sessionExpired || _busy) {
+      return;
+    }
+    // Keep the card's actions disabled from dialog open through the PATCH,
+    // including the stale-revision comparison loop.
+    setState(() => _busy = true);
     var questionText = widget.example['question']?.toString() ?? '';
     var answerText = widget.example['expected_answer']?.toString() ?? '';
     var topicText = widget.example['topic']?.toString() ?? '';
@@ -274,6 +308,7 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_error(error))));
       }
     } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -350,17 +385,35 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
         widget.httpClient.get(_uri('/api/v1/training/examples/' + id.toString() + '/quality-reviews'),
           headers: headers).timeout(const Duration(seconds: 20)),
       ]);
+      // A concurrent protected 401 must take precedence over a sibling 403/5xx,
+      // so session expiry cannot be masked by response ordering.
+      final unauthorized = responses.where((response) => response.statusCode == 401);
+      if (unauthorized.isNotEmpty) {
+        _check(unauthorized.first, 200);
+      }
       for (final response in responses) { _check(response, 200); }
       final page = jsonDecode(responses[0].body);
       final qualityPage = jsonDecode(responses[1].body);
       if (page is! Map<String, dynamic> || page['items'] is! List ||
+          page['example_id'] != id || page['count'] is! int ||
           page['total'] is! int || page['limit'] is! int ||
-          qualityPage is! Map<String, dynamic> || qualityPage['items'] is! List) {
+          page['offset'] is! int ||
+          qualityPage is! Map<String, dynamic> || qualityPage['items'] is! List ||
+          qualityPage['example_id'] != id || qualityPage['count'] is! int) {
+        throw const SafeApiException('Dữ liệu lịch sử review không hợp lệ.');
+      }
+      final rawEvents = page['items'] as List;
+      final rawQuality = qualityPage['items'] as List;
+      if (page['count'] != rawEvents.length ||
+          page['limit'] < 1 || page['limit'] > 100 || page['offset'] < 0 ||
+          !rawEvents.every(_validReviewEvent) ||
+          qualityPage['count'] != rawQuality.length ||
+          !rawQuality.every(_validQualityReview)) {
         throw const SafeApiException('Dữ liệu lịch sử review không hợp lệ.');
       }
       if (!mounted || _sessionExpired) return;
-      final events = List<dynamic>.from(page['items'] as List);
-      final quality = qualityPage['items'] as List;
+      final events = List<dynamic>.from(rawEvents);
+      final quality = rawQuality;
       var total = page['total'] as int;
       final limit = page['limit'] as int;
       var loadingMore = false;
@@ -406,7 +459,14 @@ class _TrainingReviewControlsState extends State<TrainingReviewControls> {
                     _check(response, 200);
                     final next = jsonDecode(response.body);
                     if (next is! Map<String, dynamic> || next['items'] is! List ||
-                        next['total'] is! int || next['offset'] != nextOffset) {
+                        next['example_id'] != id || next['count'] is! int ||
+                        next['total'] is! int || next['limit'] != limit ||
+                        next['offset'] != nextOffset) {
+                      throw const SafeApiException('Trang lịch sử review không hợp lệ.');
+                    }
+                    final nextItems = next['items'] as List;
+                    if (next['count'] != nextItems.length ||
+                        !nextItems.every(_validReviewEvent)) {
                       throw const SafeApiException('Trang lịch sử review không hợp lệ.');
                     }
                     if (dialogContext.mounted) {
