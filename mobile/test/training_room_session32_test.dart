@@ -115,6 +115,7 @@ void main() {
             }
             await tester.pumpAndSettle();
             expect(expired, [_token]);
+            expect(find.textContaining('Không tải được bộ dữ liệu huấn luyện'), findsNothing);
             expect(listCalls, 1);
             expect(evaluationCalls, 1);
             expect(find.textContaining('PRIVATE_'), findsNothing);
@@ -457,6 +458,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(postCount, 1);
     expect(expired, [_token]);
+    expect(find.byKey(const ValueKey('training-create-error')), findsNothing);
     expect(find.textContaining('PRIVATE_CREATE_401_BODY'), findsNothing);
     expect(tester.widget<TextField>(find.byKey(const ValueKey('training-create-question'))).controller!.text.trim(), _question);
     expect(find.text('Đã lưu ví dụ ở trạng thái chờ duyệt.'), findsNothing);

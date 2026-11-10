@@ -173,7 +173,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         _error = null;
       });
     } catch (error) {
-      if (mounted && requestVersion == _trainingDataRequestVersion) {
+      if (mounted && !_sessionExpired && requestVersion == _trainingDataRequestVersion) {
         setState(() => _error = 'Không tải được bộ dữ liệu huấn luyện: ${_safeError(error, 'Đã xảy ra lỗi khi tải dữ liệu huấn luyện.')}');
       }
     } finally {
@@ -219,7 +219,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       if (!mounted || _sessionExpired) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã lưu ví dụ ở trạng thái chờ duyệt.')));
     } catch (error) {
-      if (mounted) setState(() => _trainingCreateError = 'Không lưu được ví dụ: ${_safeError(error, 'Đã xảy ra lỗi khi lưu ví dụ.')}');
+      if (mounted && !_sessionExpired) setState(() => _trainingCreateError = 'Không lưu được ví dụ: ${_safeError(error, 'Đã xảy ra lỗi khi lưu ví dụ.')}');
     } finally {
       if (mounted) setState(() => _savingExample = false);
     }
