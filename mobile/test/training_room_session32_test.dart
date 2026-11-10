@@ -28,8 +28,17 @@ Map<String, dynamic> _example({int id = 41, String status = 'draft'}) => {
   'status': status, 'revision': 1,
 };
 
-Map<String, dynamic> _list(List<dynamic> items) =>
-    {'items': items, 'total': items.length, 'limit': 100, 'offset': 0};
+Map<String, dynamic> _list(
+  List<dynamic> items, {
+  int limit = 100,
+  int offset = 0,
+  int? total,
+}) => {
+  'items': items,
+  'total': total ?? items.length,
+  'limit': limit,
+  'offset': offset,
+};
 
 Future<void> _pump(WidgetTester tester, MockClient client, {
   void Function(String token)? onSessionExpired,
@@ -259,7 +268,13 @@ void main() {
       if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
       if (request.url.path == '/api/v1/training/examples' && request.method == 'GET') {
         listCalls++;
-        return _json(200, _list(listCalls == 1 ? [] : [_example()]));
+        final limit = int.parse(request.url.queryParameters['limit']!);
+        final offset = int.parse(request.url.queryParameters['offset']!);
+        return _json(200, _list(
+          listCalls == 1 ? [] : [_example()],
+          limit: limit,
+          offset: offset,
+        ));
       }
       if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation(total: listCalls > 1 ? 1 : 0, draft: listCalls > 1 ? 1 : 0));
       if (request.method == 'POST' && request.url.path == '/api/v1/training/examples') {
@@ -277,12 +292,12 @@ void main() {
     expect(postCount, 1);
     expect(expired, isEmpty);
     expect(find.textContaining('PRIVATE_CREATE_422_BODY'), findsNothing);
-    expect(tester.widget<TextField>(find.byKey(const ValueKey('training-create-question'))).controller!.text.trim(), _question);
+    expect(tester.widget<TextField>(find.byKey(const ValueKey('training-create-question'))).controller!.text, '  $_question  ');
     expect(find.text('Đã lưu ví dụ ở trạng thái chờ duyệt.'), findsNothing);
     await tester.tap(submit);
     await tester.pumpAndSettle();
     expect(postCount, 2);
-    expect(listCalls, 2);
+    expect(listCalls, 4);
     expect(find.text(_question), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     client.close();
@@ -336,7 +351,13 @@ void main() {
       if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
       if (request.url.path == '/api/v1/training/examples' && request.method == 'GET') {
         listCalls++;
-        return _json(200, _list(listCalls == 1 ? [] : [created]));
+        final limit = int.parse(request.url.queryParameters['limit']!);
+        final offset = int.parse(request.url.queryParameters['offset']!);
+        return _json(200, _list(
+          listCalls == 1 ? [] : [created],
+          limit: limit,
+          offset: offset,
+        ));
       }
       if (request.url.path == '/api/v1/training/evaluation') {
         return _json(200, _evaluation(total: listCalls > 1 ? 1 : 0, draft: listCalls > 1 ? 1 : 0));
@@ -361,10 +382,11 @@ void main() {
       'question': _question, 'expected_answer': _answer,
       'topic': 'fibonacci', 'citation_ids': ['kb:7:2'],
     });
-    expect(listCalls, 2);
+    expect(listCalls, 3);
     expect(find.text(_question), findsOneWidget);
     expect(find.text('Chờ duyệt'), findsOneWidget);
     expect(find.textContaining('Tổng: 1'), findsOneWidget);
+    expect(find.textContaining('ID 41'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     client.close();
   });
@@ -377,7 +399,13 @@ void main() {
       if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
       if (request.url.path == '/api/v1/training/examples' && request.method == 'GET') {
         listCalls++;
-        return _json(200, _list(listCalls == 1 ? [] : [_example()]));
+        final limit = int.parse(request.url.queryParameters['limit']!);
+        final offset = int.parse(request.url.queryParameters['offset']!);
+        return _json(200, _list(
+          listCalls == 1 ? [] : [_example()],
+          limit: limit,
+          offset: offset,
+        ));
       }
       if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation(total: listCalls > 1 ? 1 : 0, draft: listCalls > 1 ? 1 : 0));
       if (request.url.path == '/api/v1/training/examples' && request.method == 'POST') {
@@ -397,25 +425,38 @@ void main() {
     expect(postCount, 1);
     pending.complete(_json(201, _example()));
     await tester.pumpAndSettle();
-    expect(listCalls, 2);
+    expect(listCalls, 3);
     await tester.pumpWidget(const SizedBox.shrink());
     client.close();
   });
 
-  testWidgets('create 500 is sanitized, retains fields and permits retry', (tester) async {
+  testWidgets('create 500 locks POST until GET reconciliation and explicit retry confirmation', (tester) async {
     var postCount = 0;
-    var listCalls = 0;
+    var baselineCalls = 0;
+    var listRefreshCalls = 0;
+    var evaluationCalls = 0;
+    final postBodies = <String>[];
     final client = MockClient((request) async {
       if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
       if (request.url.path == '/api/v1/training/examples' && request.method == 'GET') {
-        listCalls++;
-        return _json(200, _list(listCalls == 1 ? [] : [_example()]));
+        final limit = int.parse(request.url.queryParameters['limit']!);
+        final offset = int.parse(request.url.queryParameters['offset']!);
+        if (limit == 500) {
+          baselineCalls++;
+          return _json(200, _list([], limit: 500, offset: offset));
+        }
+        listRefreshCalls++;
+        return _json(200, _list(listRefreshCalls == 1 ? [] : [_example()], limit: limit, offset: offset));
       }
-      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation(total: listCalls > 1 ? 1 : 0, draft: listCalls > 1 ? 1 : 0));
-      if (request.url.path == '/api/v1/training/examples' && request.method == 'POST') {
+      if (request.url.path == '/api/v1/training/evaluation') {
+        evaluationCalls++;
+        return _json(200, _evaluation(total: listRefreshCalls > 1 ? 1 : 0, draft: listRefreshCalls > 1 ? 1 : 0));
+      }
+      if (request.method == 'POST' && request.url.path == '/api/v1/training/examples') {
         postCount++;
+        postBodies.add(request.body);
         if (postCount == 1) return http.Response('PRIVATE_CREATE_500_BODY', 500);
-        return _json(201, _example());
+        return _json(201, _example(id: 42));
       }
       fail('Unexpected request: ${request.method} ${request.url}');
     });
@@ -425,19 +466,375 @@ void main() {
     await tester.tap(submit);
     await tester.pumpAndSettle();
     expect(postCount, 1);
+    expect(baselineCalls, 1);
     expect(find.textContaining('PRIVATE_CREATE_500_BODY'), findsNothing);
+    expect(find.text('Kết quả gửi chưa xác định'), findsOneWidget);
+    expect(tester.widget<FilledButton>(submit).onPressed, isNull);
     expect(tester.widget<TextField>(find.byKey(const ValueKey('training-create-question'))).controller!.text, '  $_question  ');
-    await tester.tap(submit);
+
+    final reconcile = find.byKey(const ValueKey('training-create-reconcile'));
+    await tester.ensureVisible(reconcile);
+    await tester.tap(reconcile);
+    await tester.pumpAndSettle();
+    expect(postCount, 1);
+    expect(baselineCalls, 2);
+    expect(find.text('Không tìm thấy bản ghi mới trong snapshot'), findsOneWidget);
+    expect(find.textContaining('không chứng minh'), findsOneWidget);
+    expect(evaluationCalls, 1); // Reconciliation is List-only; no Evaluation GET.
+
+    final review = find.byKey(const ValueKey('training-create-retry-review'));
+    await tester.ensureVisible(review);
+    await tester.tap(review);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('yêu cầu cũ muộn'), findsOneWidget);
+    expect(postCount, 1);
+    await tester.tap(find.byKey(const ValueKey('training-create-retry-confirm')));
     await tester.pumpAndSettle();
     expect(postCount, 2);
-    expect(listCalls, 2);
-    expect(find.text(_question), findsOneWidget);
+    expect(baselineCalls, 3);
+    expect(postBodies[0], postBodies[1]);
+    expect(find.textContaining('Đã lưu ví dụ ở trạng thái chờ duyệt'), findsOneWidget);
+    expect(evaluationCalls, 2);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('create 500 after commit is shown as a possible match, never auto-retried', (tester) async {
+    var postCount = 0;
+    var baselineCalls = 0;
+    var rowExists = false;
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples' && request.method == 'GET') {
+        final limit = int.parse(request.url.queryParameters['limit']!);
+        final offset = int.parse(request.url.queryParameters['offset']!);
+        if (limit == 500) {
+          baselineCalls++;
+          return _json(200, _list(rowExists ? [_example(id: 77)] : [], limit: 500, offset: offset));
+        }
+        return _json(200, _list([], limit: limit, offset: offset));
+      }
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.method == 'POST' && request.url.path == '/api/v1/training/examples') {
+        postCount++;
+        rowExists = true;
+        return http.Response('PRIVATE_RESPONSE_LOST_AFTER_COMMIT', 500);
+      }
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+    await _pump(tester, client);
+    await _fillCreate(tester);
+    await tester.tap(find.byKey(const ValueKey('training-create-submit')));
+    await tester.pumpAndSettle();
+    expect(postCount, 1);
+    expect(baselineCalls, 1);
+    await tester.ensureVisible(find.byKey(const ValueKey('training-create-reconcile')));
+    await tester.tap(find.byKey(const ValueKey('training-create-reconcile')));
+    await tester.pumpAndSettle();
+    expect(postCount, 1);
+    expect(find.text('Có bản ghi có khả năng khớp'), findsOneWidget);
+    expect(find.byKey(const ValueKey('training-create-match-77')), findsOneWidget);
+    expect(find.byKey(const ValueKey('training-create-retry-review')), findsNothing);
+    expect(find.textContaining('không chứng minh chắc chắn'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  for (final transport in ['timeout', 'socket', 'client']) {
+    testWidgets('Create $transport after dispatch enters unknown outcome and retains payload', (tester) async {
+      var postCount = 0;
+      final client = MockClient((request) async {
+        if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+        if (request.url.path == '/api/v1/training/examples' && request.method == 'GET') {
+          final limit = int.parse(request.url.queryParameters['limit']!);
+          final offset = int.parse(request.url.queryParameters['offset']!);
+          return _json(200, _list([], limit: limit, offset: offset));
+        }
+        if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+        if (request.method == 'POST' && request.url.path == '/api/v1/training/examples') {
+          postCount++;
+          if (transport == 'timeout') throw TimeoutException('PRIVATE_TIMEOUT');
+          if (transport == 'socket') throw const SocketException('PRIVATE_SOCKET');
+          throw http.ClientException('PRIVATE_CONNECTION_RESET');
+        }
+        fail('Unexpected request: ${request.method} ${request.url}');
+      });
+      await _pump(tester, client);
+      await _fillCreate(tester);
+      await tester.tap(find.byKey(const ValueKey('training-create-submit')));
+      await tester.pumpAndSettle();
+      expect(postCount, 1);
+      expect(find.text('Kết quả gửi chưa xác định'), findsOneWidget);
+      expect(find.textContaining('PRIVATE_'), findsNothing);
+      final question = tester.widget<TextField>(
+        find.byKey(const ValueKey('training-create-question')),
+      );
+      expect(question.enabled, isFalse);
+      expect(question.controller!.text, '  $_question  ');
+      expect(tester.widget<FilledButton>(
+        find.byKey(const ValueKey('training-create-submit')),
+      ).onPressed, isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      client.close();
+    });
+  }
+
+  testWidgets('Create reconciliation failure keeps POST locked and retries GET only', (tester) async {
+    var postCount = 0;
+    var reconcileCalls = 0;
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples' && request.method == 'GET') {
+        final limit = int.parse(request.url.queryParameters['limit']!);
+        final offset = int.parse(request.url.queryParameters['offset']!);
+        if (limit == 500) {
+          reconcileCalls++;
+          if (reconcileCalls == 2) return http.Response('PRIVATE_LIST_500', 500);
+          return _json(200, _list([], limit: limit, offset: offset));
+        }
+        return _json(200, _list([], limit: limit, offset: offset));
+      }
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.method == 'POST' && request.url.path == '/api/v1/training/examples') {
+        postCount++;
+        return http.Response('PRIVATE_CREATE_500', 500);
+      }
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+    await _pump(tester, client);
+    await _fillCreate(tester);
+    await tester.tap(find.byKey(const ValueKey('training-create-submit')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('training-create-reconcile')));
+    await tester.tap(find.byKey(const ValueKey('training-create-reconcile')));
+    await tester.pumpAndSettle();
+    expect(find.text('Chưa đối soát đầy đủ'), findsOneWidget);
+    expect(postCount, 1);
+    final reconcile = find.byKey(const ValueKey('training-create-reconcile'));
+    await tester.ensureVisible(reconcile);
+    await tester.tap(reconcile);
+    await tester.pumpAndSettle();
+    expect(reconcileCalls, 3);
+    expect(postCount, 1);
+    expect(find.text('Không tìm thấy bản ghi mới trong snapshot'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  for (final candidateCount in [1, 2]) {
+    testWidgets('Create reconciliation reports $candidateCount matching candidate(s) without retry', (tester) async {
+      var postCount = 0;
+      var reconcileCalls = 0;
+      final rows = List<Map<String, dynamic>>.generate(
+        candidateCount,
+        (index) => _example(id: 80 + index),
+      );
+      final client = MockClient((request) async {
+        if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+        if (request.url.path == '/api/v1/training/examples' && request.method == 'GET') {
+          final limit = int.parse(request.url.queryParameters['limit']!);
+          final offset = int.parse(request.url.queryParameters['offset']!);
+          if (limit == 500) {
+            reconcileCalls++;
+            return _json(200, _list(reconcileCalls == 1 ? [] : rows, limit: limit, offset: offset));
+          }
+          return _json(200, _list([], limit: limit, offset: offset));
+        }
+        if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+        if (request.method == 'POST' && request.url.path == '/api/v1/training/examples') {
+          postCount++;
+          return http.Response('PRIVATE_CREATE_500', 500);
+        }
+        fail('Unexpected request: ${request.method} ${request.url}');
+      });
+      await _pump(tester, client);
+      await _fillCreate(tester);
+      await tester.tap(find.byKey(const ValueKey('training-create-submit')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const ValueKey('training-create-reconcile')));
+      await tester.tap(find.byKey(const ValueKey('training-create-reconcile')));
+      await tester.pumpAndSettle();
+      expect(postCount, 1);
+      if (candidateCount == 1) {
+        expect(find.text('Có bản ghi có khả năng khớp'), findsOneWidget);
+      } else {
+        expect(find.text('Có nhiều bản ghi khớp'), findsOneWidget);
+      }
+      for (var id = 80; id < 80 + candidateCount; id++) {
+        expect(find.byKey(ValueKey('training-create-match-$id')), findsOneWidget);
+      }
+      expect(find.byKey(const ValueKey('training-create-retry-review')), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      client.close();
+    });
+  }
+
+  testWidgets('pre-existing same-content row is excluded by baseline ID set', (tester) async {
+    var postCount = 0;
+    var snapshotCalls = 0;
+    final oldRow = _example(id: 41);
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples' && request.method == 'GET') {
+        final limit = int.parse(request.url.queryParameters['limit']!);
+        final offset = int.parse(request.url.queryParameters['offset']!);
+        if (limit == 500) {
+          snapshotCalls++;
+          return _json(200, _list([oldRow], limit: limit, offset: offset));
+        }
+        return _json(200, _list([], limit: limit, offset: offset));
+      }
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.method == 'POST' && request.url.path == '/api/v1/training/examples') {
+        postCount++;
+        return http.Response('PRIVATE_CREATE_500', 500);
+      }
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+    await _pump(tester, client);
+    await _fillCreate(tester);
+    await tester.tap(find.byKey(const ValueKey('training-create-submit')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('training-create-reconcile')));
+    await tester.tap(find.byKey(const ValueKey('training-create-reconcile')));
+    await tester.pumpAndSettle();
+    expect(snapshotCalls, 2);
+    expect(postCount, 1);
+    expect(find.text('Không tìm thấy bản ghi mới trong snapshot'), findsOneWidget);
+    expect(find.byKey(const ValueKey('training-create-match-41')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('reconciliation paginates beyond 500 rows before reporting a match', (tester) async {
+    var postCount = 0;
+    var snapshotPhase = 0;
+    final firstPage = List<Map<String, dynamic>>.generate(
+      500,
+      (index) => {
+        ..._example(id: index + 1),
+        'question': 'Existing row question number $index',
+      },
+    );
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples' && request.method == 'GET') {
+        final limit = int.parse(request.url.queryParameters['limit']!);
+        final offset = int.parse(request.url.queryParameters['offset']!);
+        if (limit == 500) {
+          if (snapshotPhase == 0) {
+            snapshotPhase++;
+            return _json(200, _list([], limit: limit, offset: offset));
+          }
+          if (offset == 0) {
+            return _json(200, _list(firstPage, limit: limit, offset: offset, total: 501));
+          }
+          return _json(200, _list([_example(id: 900)], limit: limit, offset: offset, total: 501));
+        }
+        return _json(200, _list([], limit: limit, offset: offset));
+      }
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.method == 'POST' && request.url.path == '/api/v1/training/examples') {
+        postCount++;
+        return http.Response('PRIVATE_CREATE_500', 500);
+      }
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+    await _pump(tester, client);
+    await _fillCreate(tester);
+    await tester.tap(find.byKey(const ValueKey('training-create-submit')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('training-create-reconcile')));
+    await tester.tap(find.byKey(const ValueKey('training-create-reconcile')));
+    await tester.pumpAndSettle();
+    expect(postCount, 1);
+    expect(find.text('Có bản ghi có khả năng khớp'), findsOneWidget);
+    expect(find.byKey(const ValueKey('training-create-match-900')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('incomplete pagination never unlocks Create retry', (tester) async {
+    var postCount = 0;
+    var snapshotPhase = 0;
+    final shortPage = List<Map<String, dynamic>>.generate(
+      499,
+      (index) => {
+        ..._example(id: index + 1),
+        'question': 'Existing row question number $index',
+      },
+    );
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples' && request.method == 'GET') {
+        final limit = int.parse(request.url.queryParameters['limit']!);
+        final offset = int.parse(request.url.queryParameters['offset']!);
+        if (limit == 500) {
+          if (snapshotPhase++ == 0) return _json(200, _list([], limit: limit, offset: offset));
+          return _json(200, _list(shortPage, limit: limit, offset: offset, total: 501));
+        }
+        return _json(200, _list([], limit: limit, offset: offset));
+      }
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.method == 'POST' && request.url.path == '/api/v1/training/examples') {
+        postCount++;
+        return http.Response('PRIVATE_CREATE_500', 500);
+      }
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+    await _pump(tester, client);
+    await _fillCreate(tester);
+    await tester.tap(find.byKey(const ValueKey('training-create-submit')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('training-create-reconcile')));
+    await tester.tap(find.byKey(const ValueKey('training-create-reconcile')));
+    await tester.pumpAndSettle();
+    expect(postCount, 1);
+    expect(find.text('Chưa đối soát đầy đủ'), findsOneWidget);
+    expect(find.byKey(const ValueKey('training-create-retry-review')), findsNothing);
+    expect(find.byKey(const ValueKey('training-create-reconcile')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
+  testWidgets('Create 409 reconciles List and never blindly retries POST', (tester) async {
+    var postCount = 0;
+    var listOnlyCalls = 0;
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples' && request.method == 'GET') {
+        final limit = int.parse(request.url.queryParameters['limit']!);
+        final offset = int.parse(request.url.queryParameters['offset']!);
+        if (limit == 500) {
+          listOnlyCalls++;
+          return _json(200, _list([], limit: limit, offset: offset));
+        }
+        return _json(200, _list([], limit: limit, offset: offset));
+      }
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.method == 'POST' && request.url.path == '/api/v1/training/examples') {
+        postCount++;
+        return http.Response('PRIVATE_CREATE_409', 409);
+      }
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+    await _pump(tester, client);
+    await _fillCreate(tester);
+    await tester.tap(find.byKey(const ValueKey('training-create-submit')));
+    await tester.pumpAndSettle();
+    expect(postCount, 1);
+    expect(listOnlyCalls, 2);
+    expect(find.text('Không tìm thấy bản ghi mới trong snapshot'), findsOneWidget);
+    expect(find.textContaining('xung đột'), findsOneWidget);
+    expect(find.byKey(const ValueKey('training-create-retry-review')), findsOneWidget);
+    expect(postCount, 1);
     await tester.pumpWidget(const SizedBox.shrink());
     client.close();
   });
 
   testWidgets('create 401 expires owner session once and blocks further POST', (tester) async {
     var postCount = 0;
+    var baselineCalls = 0;
     final expired = <String>[];
     final client = MockClient((request) async {
       if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
@@ -445,7 +842,12 @@ void main() {
         postCount++;
         return http.Response('PRIVATE_CREATE_401_BODY', 401);
       }
-      if (request.method == 'GET' && request.url.path == '/api/v1/training/examples') return _json(200, _list([]));
+      if (request.method == 'GET' && request.url.path == '/api/v1/training/examples') {
+        final limit = int.parse(request.url.queryParameters['limit']!);
+        final offset = int.parse(request.url.queryParameters['offset']!);
+        if (limit == 500) baselineCalls++;
+        return _json(200, _list([], limit: limit, offset: offset));
+      }
       if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
       fail('Unexpected request: ${request.method} ${request.url}');
     });
@@ -457,6 +859,7 @@ void main() {
     await tester.tap(submit);
     await tester.pumpAndSettle();
     expect(postCount, 1);
+    expect(baselineCalls, 1); // Pre-POST baseline only; no reconcile after 401.
     expect(expired, [_token]);
     expect(find.byKey(const ValueKey('training-create-error')), findsNothing);
     expect(find.textContaining('PRIVATE_CREATE_401_BODY'), findsNothing);

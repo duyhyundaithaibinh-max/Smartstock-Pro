@@ -21,6 +21,24 @@ class _TrainingDataRequestResult {
   final StackTrace? stackTrace;
 }
 
+
+enum _TrainingCreateOutcome {
+  idle,
+  submitting,
+  unknownOutcome,
+  reconciling,
+  possibleMatch,
+  ambiguousMatch,
+  notFoundInSnapshot,
+  reconcileFailed,
+}
+
+class _TrainingExamplesSnapshot {
+  const _TrainingExamplesSnapshot({required this.items, required this.ids});
+  final List<Map<String, dynamic>> items;
+  final Set<int> ids;
+}
+
 /// Local knowledge retrieval and document management.
 /// Search results are source passages, not AI-generated answers.
 class TrainingRoomPage extends StatefulWidget {
@@ -55,6 +73,13 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   Map<String, dynamic>? _evaluation;
   bool _savingExample = false;
   String? _trainingCreateError;
+  _TrainingCreateOutcome _createOutcome = _TrainingCreateOutcome.idle;
+  Map<String, dynamic>? _pendingCreatePayload;
+  Set<int> _baselineCreateIds = <int>{};
+  List<Map<String, dynamic>> _createMatches = <Map<String, dynamic>>[];
+  List<Map<String, dynamic>> _createCandidates = <Map<String, dynamic>>[];
+  String? _createOutcomeMessage;
+  int? _lastCreatedExampleId;
   bool _trainingDataLoading = false;
   bool _exportingTraining = false;
   final Set<String> _citationLoadingIds = <String>{};
@@ -183,43 +208,448 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     }
   }
 
+
+  List<Object?>? _normalizedTrainingTuple(Map<String, dynamic> item) {
+    final question = item['question'];
+    final answer = item['expected_answer'];
+    final topic = item['topic'];
+    final rawCitations = item['citation_ids'];
+    if (question is! String || answer is! String || topic is! String ||
+        rawCitations is! List || rawCitations.any((value) => value is! String)) {
+      return null;
+    }
+    final citations = rawCitations
+        .cast<String>()
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toList();
+    final normalizedTopic = topic.trim().isEmpty ? 'general' : topic.trim();
+    return [question.trim(), answer.trim(), normalizedTopic, citations];
+  }
+
+  bool _trainingExampleMatchesPayload(
+    Map<String, dynamic> item,
+    Map<String, dynamic> payload,
+  ) {
+    final rowTuple = _normalizedTrainingTuple(item);
+    final payloadTuple = _normalizedTrainingTuple(payload);
+    return rowTuple != null &&
+        payloadTuple != null &&
+        jsonEncode(rowTuple) == jsonEncode(payloadTuple);
+  }
+
+  Future<_TrainingExamplesSnapshot> _fetchTrainingExamplesSnapshot() async {
+    const pageSize = 500;
+    var offset = 0;
+    int? expectedTotal;
+    final items = <Map<String, dynamic>>[];
+    final ids = <int>{};
+
+    while (expectedTotal == null || offset < expectedTotal) {
+      final response = await _httpClient.get(
+        _uri('/api/v1/training/examples', {
+          'limit': '$pageSize',
+          'offset': '$offset',
+        }),
+        headers: apiAuthHeaders(widget.apiToken),
+      ).timeout(const Duration(seconds: 20));
+      _checkResponse(response, expectedStatus: 200);
+
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic> ||
+          decoded['items'] is! List ||
+          decoded['total'] is! int ||
+          (decoded['total'] as int) < 0 ||
+          decoded['offset'] != offset ||
+          decoded['limit'] != pageSize) {
+        throw const SafeApiException(
+          'Danh sách đối soát không đúng cấu trúc hoặc thiếu phân trang.',
+        );
+      }
+      final pageTotal = decoded['total'] as int;
+      if (expectedTotal == null) {
+        expectedTotal = pageTotal;
+      } else if (pageTotal != expectedTotal) {
+        throw const SafeApiException(
+          'Tổng số bản ghi thay đổi trong khi phân trang; chưa thể đối soát đầy đủ.',
+        );
+      }
+
+      final pageItems = decoded['items'] as List<dynamic>;
+      if (pageItems.length > pageSize ||
+          pageItems.length > expectedTotal - offset) {
+        throw const SafeApiException(
+          'Trang danh sách trả về số bản ghi không hợp lệ.',
+        );
+      }
+      for (final rawItem in pageItems) {
+        if (rawItem is! Map<String, dynamic>) {
+          throw const SafeApiException(
+            'Một bản ghi trong danh sách đối soát không hợp lệ.',
+          );
+        }
+        final id = rawItem['id'];
+        if (id is! int || id <= 0 || !ids.add(id) ||
+            _normalizedTrainingTuple(rawItem) == null) {
+          throw const SafeApiException(
+            'Danh sách đối soát có ID trùng hoặc dữ liệu bản ghi không hợp lệ.',
+          );
+        }
+        items.add(Map<String, dynamic>.from(rawItem));
+      }
+
+      final nextOffset = offset + pageItems.length;
+      if (nextOffset < expectedTotal && pageItems.length != pageSize) {
+        throw const SafeApiException(
+          'Danh sách đối soát chưa đọc hết các trang; không thể kết luận không có bản ghi.',
+        );
+      }
+      if (nextOffset == offset && offset < expectedTotal) {
+        throw const SafeApiException(
+          'Phân trang không tiến triển; danh sách đối soát chưa đầy đủ.',
+        );
+      }
+      offset = nextOffset;
+    }
+
+    if (items.length != expectedTotal) {
+      throw const SafeApiException(
+        'Số bản ghi đã đọc không khớp tổng số; đối soát chưa đầy đủ.',
+      );
+    }
+    return _TrainingExamplesSnapshot(items: items, ids: ids);
+  }
+
+  Future<void> _reconcileUnknownCreate() async {
+    if (!mounted || _sessionExpired ||
+        _pendingCreatePayload == null ||
+        !{
+          _TrainingCreateOutcome.unknownOutcome,
+          _TrainingCreateOutcome.reconcileFailed,
+        }.contains(_createOutcome)) {
+      return;
+    }
+    final wasConflict = _createOutcomeMessage?.contains('xung đột') ?? false;
+    setState(() {
+      _createOutcome = _TrainingCreateOutcome.reconciling;
+      _createOutcomeMessage = 'Đang đọc riêng danh sách ví dụ; thao tác này chỉ gọi GET, không gửi Create.';
+    });
+    try {
+      final snapshot = await _fetchTrainingExamplesSnapshot();
+      if (!mounted || _sessionExpired) return;
+      final payload = _pendingCreatePayload!;
+      final matches = snapshot.items
+          .where((item) => _trainingExampleMatchesPayload(item, payload))
+          .toList();
+      final candidates = matches
+          .where((item) => !_baselineCreateIds.contains(item['id'] as int))
+          .toList();
+
+      setState(() {
+        _createMatches = matches;
+        _createCandidates = candidates;
+        if (candidates.length == 1) {
+          _createOutcome = _TrainingCreateOutcome.possibleMatch;
+          _createOutcomeMessage = wasConflict
+              ? 'Máy chủ trả về xung đột. Có một bản ghi mới khớp nội dung; đây chỉ là possible match, không chứng minh chắc chắn bản ghi được tạo bởi lần gửi vừa rồi.'
+              : 'Có một bản ghi mới khớp nội dung. Đây chỉ là possible match, không chứng minh chắc chắn bản ghi được tạo bởi lần gửi vừa rồi.';
+        } else if (candidates.length > 1) {
+          _createOutcome = _TrainingCreateOutcome.ambiguousMatch;
+          _createOutcomeMessage = wasConflict
+              ? 'Máy chủ trả về xung đột. Có nhiều bản ghi mới khớp nội dung; không thể xác định bản ghi nào liên quan đến lần gửi vừa rồi.'
+              : 'Có nhiều bản ghi mới khớp nội dung. Không thể xác định bản ghi nào liên quan đến lần gửi vừa rồi.';
+        } else {
+          _createOutcome = _TrainingCreateOutcome.notFoundInSnapshot;
+          _createOutcomeMessage = wasConflict
+              ? 'Máy chủ trả về xung đột. Không tìm thấy bản ghi mới khớp nội dung trong snapshot danh sách đã đọc đầy đủ; điều này không chứng minh máy chủ chưa lưu và yêu cầu cũ vẫn có thể hoàn tất muộn.'
+              : 'Không tìm thấy bản ghi mới khớp nội dung trong snapshot danh sách đã đọc đầy đủ. Điều này không chứng minh máy chủ chưa lưu; yêu cầu cũ vẫn có thể hoàn tất muộn.';
+        }
+      });
+    } catch (error) {
+      if (mounted && !_sessionExpired) {
+        setState(() {
+          _createOutcome = _TrainingCreateOutcome.reconcileFailed;
+          _createOutcomeMessage =
+              'Chưa đối soát được danh sách: ${_safeError(error, 'Danh sách chưa đọc được đầy đủ. Vui lòng thử GET lại.')}';
+        });
+      }
+    }
+  }
+
+  Future<void> _confirmCreateRetry() async {
+    if (!mounted ||
+        _sessionExpired ||
+        _createOutcome != _TrainingCreateOutcome.notFoundInSnapshot ||
+        _pendingCreatePayload == null) {
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Xác nhận gửi Create lần nữa?'),
+        content: const Text(
+          'Không tìm thấy bản ghi mới khớp nội dung trong snapshot vừa đọc. '
+          'Đây không phải bằng chứng lần gửi trước chưa được lưu: máy chủ vẫn có thể '
+          'hoàn tất yêu cầu cũ muộn. Gửi lại có thể tạo bản ghi trùng. '
+          'Chỉ tiếp tục nếu bạn đã hiểu và chấp nhận rủi ro này.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Quay lại'),
+          ),
+          FilledButton(
+            key: const ValueKey('training-create-retry-confirm'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Tôi hiểu rủi ro, cho phép gửi lại'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted || _sessionExpired ||
+        _createOutcome != _TrainingCreateOutcome.notFoundInSnapshot) {
+      return;
+    }
+
+    final currentPayload = <String, dynamic>{
+      'question': _trainingQuestionController.text.trim(),
+      'expected_answer': _trainingAnswerController.text.trim(),
+      'topic': _trainingTopicController.text.trim().isEmpty
+          ? 'general'
+          : _trainingTopicController.text.trim(),
+      'citation_ids': _trainingCitationsController.text
+          .split(',')
+          .map((item) => item.trim())
+          .where((item) => item.isNotEmpty)
+          .toList(),
+    };
+    if (jsonEncode(currentPayload) != jsonEncode(_pendingCreatePayload)) {
+      setState(() {
+        _createOutcome = _TrainingCreateOutcome.reconcileFailed;
+        _createOutcomeMessage =
+            'Nội dung biểu mẫu không còn trùng payload đang đối soát. Không gửi lại để tránh gửi sai dữ liệu.';
+      });
+      return;
+    }
+
+    setState(() {
+      _createOutcome = _TrainingCreateOutcome.idle;
+      _pendingCreatePayload = null;
+      _baselineCreateIds = <int>{};
+      _createMatches = <Map<String, dynamic>>[];
+      _createCandidates = <Map<String, dynamic>>[];
+      _createOutcomeMessage = null;
+      _trainingCreateError = null;
+    });
+    await _saveTrainingExample();
+  }
+
+  Widget _buildCreateOutcomePanel() {
+    final outcome = _createOutcome;
+    if (outcome == _TrainingCreateOutcome.idle ||
+        outcome == _TrainingCreateOutcome.submitting) {
+      return const SizedBox.shrink();
+    }
+    final details = outcome == _TrainingCreateOutcome.possibleMatch
+        ? _createCandidates
+        : outcome == _TrainingCreateOutcome.ambiguousMatch
+            ? _createCandidates
+            : outcome == _TrainingCreateOutcome.notFoundInSnapshot
+                ? _createMatches
+                : const <Map<String, dynamic>>[];
+    return Card(
+      key: const ValueKey('training-create-outcome-panel'),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              switch (outcome) {
+                _TrainingCreateOutcome.unknownOutcome =>
+                  'Kết quả gửi chưa xác định',
+                _TrainingCreateOutcome.reconciling =>
+                  'Đang đối soát danh sách',
+                _TrainingCreateOutcome.possibleMatch =>
+                  'Có bản ghi có khả năng khớp',
+                _TrainingCreateOutcome.ambiguousMatch =>
+                  'Có nhiều bản ghi khớp',
+                _TrainingCreateOutcome.notFoundInSnapshot =>
+                  'Không tìm thấy bản ghi mới trong snapshot',
+                _TrainingCreateOutcome.reconcileFailed =>
+                  'Chưa đối soát đầy đủ',
+                _ => 'Đang xử lý Create',
+              },
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 6),
+            Text(_createOutcomeMessage ?? ''),
+            if (outcome == _TrainingCreateOutcome.reconciling)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: LinearProgressIndicator(),
+              ),
+            if (details.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              ...details.map((item) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  'ID ${item['id']} • ${item['status'] ?? 'draft'}'
+                  '${item['created_at'] is String ? ' • ${item['created_at']}' : ''}',
+                  key: ValueKey('training-create-match-${item['id']}'),
+                ),
+              )),
+            ],
+            if (outcome == _TrainingCreateOutcome.unknownOutcome ||
+                outcome == _TrainingCreateOutcome.reconcileFailed)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  key: const ValueKey('training-create-reconcile'),
+                  onPressed: _sessionExpired ? null : _reconcileUnknownCreate,
+                  icon: const Icon(Icons.sync),
+                  label: const Text('Đối soát danh sách (chỉ GET)'),
+                ),
+              ),
+            if (outcome == _TrainingCreateOutcome.notFoundInSnapshot)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton(
+                  key: const ValueKey('training-create-retry-review'),
+                  onPressed: _sessionExpired ? null : _confirmCreateRetry,
+                  child: const Text('Xem cảnh báo trước khi gửi lại'),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _saveTrainingExample() async {
-    if (!mounted || _sessionExpired) return;
-    if (_savingExample) return;
+    if (!mounted || _sessionExpired || _savingExample ||
+        _createOutcome != _TrainingCreateOutcome.idle) {
+      return;
+    }
     final question = _trainingQuestionController.text.trim();
     final answer = _trainingAnswerController.text.trim();
     final topic = _trainingTopicController.text.trim();
     final citations = _trainingCitationsController.text
-        .split(',').map((item) => item.trim()).where((item) => item.isNotEmpty).toList();
+        .split(',')
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
     final citationPattern = RegExp(r'^kb:\d+:\d+$');
     if (question.length < 10 || question.length > 1000 ||
         answer.length < 20 || answer.length > 5000 ||
         topic.length > 80 || citations.isEmpty || citations.length > 10 ||
         citations.any((item) => !citationPattern.hasMatch(item)) ||
         citations.toSet().length != citations.length) {
-      setState(() => _trainingCreateError = 'Câu hỏi cần 10–1.000 ký tự, đáp án 20–5.000 ký tự, chủ đề tối đa 80 ký tự; cần 1–10 mã nguồn kb:document_id:chunk_index hợp lệ và không trùng.');
+      setState(() => _trainingCreateError =
+          'Câu hỏi cần 10–1.000 ký tự, đáp án 20–5.000 ký tự, chủ đề tối đa 80 ký tự; cần 1–10 mã nguồn kb:document_id:chunk_index hợp lệ và không trùng.');
       return;
     }
-    setState(() { _savingExample = true; _error = null; _trainingCreateError = null; });
+
+    final payload = <String, dynamic>{
+      'question': question,
+      'expected_answer': answer,
+      'topic': topic.isEmpty ? 'general' : topic,
+      'citation_ids': List<String>.unmodifiable(citations),
+    };
+    var postDispatched = false;
+    setState(() {
+      _savingExample = true;
+      _createOutcome = _TrainingCreateOutcome.submitting;
+      _pendingCreatePayload = Map<String, dynamic>.unmodifiable(payload);
+      _baselineCreateIds = <int>{};
+      _createMatches = <Map<String, dynamic>>[];
+      _createCandidates = <Map<String, dynamic>>[];
+      _createOutcomeMessage = null;
+      _lastCreatedExampleId = null;
+      _trainingCreateError = null;
+      _error = null;
+    });
+
     try {
+      final baseline = await _fetchTrainingExamplesSnapshot();
+      if (!mounted || _sessionExpired) return;
+      setState(() => _baselineCreateIds = Set<int>.from(baseline.ids));
+
+      postDispatched = true;
       final response = await _httpClient.post(
         _uri('/api/v1/training/examples'),
-        headers: {'Content-Type': 'application/json', ...apiAuthHeaders(widget.apiToken)},
-        body: jsonEncode({
-          'question': question, 'expected_answer': answer,
-          'topic': topic.isEmpty ? 'general' : topic, 'citation_ids': citations,
-        }),
+        headers: {
+          'Content-Type': 'application/json',
+          ...apiAuthHeaders(widget.apiToken),
+        },
+        body: jsonEncode(payload),
       ).timeout(const Duration(seconds: 20));
       _checkResponse(response, expectedStatus: 201);
+      int? createdExampleId;
+      try {
+        final createdPayload = jsonDecode(response.body);
+        if (createdPayload is Map<String, dynamic> &&
+            createdPayload['id'] is int) {
+          createdExampleId = createdPayload['id'] as int;
+        }
+      } catch (_) {
+        // HTTP 201 confirms creation even if an optional response field cannot
+        // be decoded; never turn a confirmed success into an ambiguous retry.
+      }
+
       if (!mounted || _sessionExpired) return;
+      _lastCreatedExampleId = createdExampleId;
       _trainingQuestionController.clear();
       _trainingAnswerController.clear();
       _trainingCitationsController.clear();
+      setState(() {
+        _createOutcome = _TrainingCreateOutcome.idle;
+        _pendingCreatePayload = null;
+        _baselineCreateIds = <int>{};
+        _createOutcomeMessage = null;
+      });
       await _loadTrainingData();
       if (!mounted || _sessionExpired) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã lưu ví dụ ở trạng thái chờ duyệt.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_lastCreatedExampleId == null
+              ? 'Đã lưu ví dụ ở trạng thái chờ duyệt.'
+              : 'Đã lưu ví dụ ở trạng thái chờ duyệt (ID $_lastCreatedExampleId).'),
+        ),
+      );
     } catch (error) {
-      if (mounted && !_sessionExpired) setState(() => _trainingCreateError = 'Không lưu được ví dụ: ${_safeError(error, 'Đã xảy ra lỗi khi lưu ví dụ.')}');
+      if (!mounted || _sessionExpired) return;
+      if (!postDispatched) {
+        setState(() {
+          _createOutcome = _TrainingCreateOutcome.idle;
+          _pendingCreatePayload = null;
+          _baselineCreateIds = <int>{};
+          _trainingCreateError =
+              'Chưa gửi Create vì không thể đọc đầy đủ danh sách trước khi gửi: ${_safeError(error, 'Không thể xác minh danh sách hiện tại. Vui lòng thử lại.')}';
+        });
+      } else if (error is ApiRequestException &&
+          error.statusCode >= 400 &&
+          error.statusCode < 500 &&
+          error.statusCode != 409) {
+        setState(() {
+          _createOutcome = _TrainingCreateOutcome.idle;
+          _pendingCreatePayload = null;
+          _baselineCreateIds = <int>{};
+          _trainingCreateError =
+              'Không lưu được ví dụ: ${_safeError(error, 'Dữ liệu bị từ chối.')}';
+        });
+      } else {
+        setState(() {
+          _createOutcome = _TrainingCreateOutcome.unknownOutcome;
+          _createOutcomeMessage = error is ApiRequestException &&
+                  error.statusCode == 409
+              ? 'Máy chủ trả về xung đột. Cần đối soát danh sách trước khi quyết định; không tự gửi lại.'
+              : 'Máy chủ chưa xác nhận kết quả lần gửi. Giữ nguyên nội dung; không tự gửi lại vì yêu cầu cũ có thể đã được lưu.';
+        });
+        if (error is ApiRequestException && error.statusCode == 409) {
+          await _reconcileUnknownCreate();
+        }
+      }
     } finally {
       if (mounted) setState(() => _savingExample = false);
     }
@@ -916,15 +1346,15 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                   const SizedBox(height: 6),
                   const Text('Tạo cặp câu hỏi–đáp án chuẩn dựa trên tài liệu đã nạp. Mỗi ví dụ phải gắn mã trích dẫn nguồn; ví dụ mới chờ duyệt và chỉ ví dụ đã duyệt mới được xuất.'),
                   const SizedBox(height: 12),
-                  TextField(key: const ValueKey('training-create-question'), controller: _trainingQuestionController, enabled: !_savingExample, maxLength: 1000, minLines: 2, maxLines: 3, decoration: const InputDecoration(labelText: 'Câu hỏi mẫu', helperText: 'Tối thiểu 10 ký tự', border: OutlineInputBorder())),
+                  TextField(key: const ValueKey('training-create-question'), controller: _trainingQuestionController, enabled: !_savingExample && _createOutcome == _TrainingCreateOutcome.idle && !_sessionExpired, maxLength: 1000, minLines: 2, maxLines: 3, decoration: const InputDecoration(labelText: 'Câu hỏi mẫu', helperText: 'Tối thiểu 10 ký tự', border: OutlineInputBorder())),
                   const SizedBox(height: 8),
-                  TextField(key: const ValueKey('training-create-answer'), controller: _trainingAnswerController, enabled: !_savingExample, maxLength: 5000, minLines: 3, maxLines: 5, decoration: const InputDecoration(labelText: 'Đáp án chuẩn đã kiểm chứng', helperText: 'Tối thiểu 20 ký tự', border: OutlineInputBorder())),
+                  TextField(key: const ValueKey('training-create-answer'), controller: _trainingAnswerController, enabled: !_savingExample && _createOutcome == _TrainingCreateOutcome.idle && !_sessionExpired, maxLength: 5000, minLines: 3, maxLines: 5, decoration: const InputDecoration(labelText: 'Đáp án chuẩn đã kiểm chứng', helperText: 'Tối thiểu 20 ký tự', border: OutlineInputBorder())),
                   const SizedBox(height: 8),
-                  TextField(key: const ValueKey('training-create-topic'), controller: _trainingTopicController, enabled: !_savingExample, maxLength: 80, decoration: const InputDecoration(labelText: 'Chủ đề', border: OutlineInputBorder())),
+                  TextField(key: const ValueKey('training-create-topic'), controller: _trainingTopicController, enabled: !_savingExample && _createOutcome == _TrainingCreateOutcome.idle && !_sessionExpired, maxLength: 80, decoration: const InputDecoration(labelText: 'Chủ đề', border: OutlineInputBorder())),
                   const SizedBox(height: 8),
-                  TextField(key: const ValueKey('training-create-citations'), controller: _trainingCitationsController, enabled: !_savingExample, maxLength: 1000, decoration: const InputDecoration(labelText: 'Mã nguồn (kb:document:chunk)', helperText: 'Lấy citation_id từ kết quả tra cứu kho tri thức; phân tách nhiều mã bằng dấu phẩy.', border: OutlineInputBorder())),
+                  TextField(key: const ValueKey('training-create-citations'), controller: _trainingCitationsController, enabled: !_savingExample && _createOutcome == _TrainingCreateOutcome.idle && !_sessionExpired, maxLength: 1000, decoration: const InputDecoration(labelText: 'Mã nguồn (kb:document:chunk)', helperText: 'Lấy citation_id từ kết quả tra cứu kho tri thức; phân tách nhiều mã bằng dấu phẩy.', border: OutlineInputBorder())),
                   const SizedBox(height: 10),
-                  SizedBox(width: double.infinity, child: FilledButton.icon(key: const ValueKey('training-create-submit'), onPressed: _savingExample || _sessionExpired ? null : _saveTrainingExample, icon: const Icon(Icons.playlist_add), label: Text(_savingExample ? 'Đang lưu...' : 'Lưu ví dụ chờ duyệt'))),
+                  SizedBox(width: double.infinity, child: FilledButton.icon(key: const ValueKey('training-create-submit'), onPressed: _savingExample || _sessionExpired || _createOutcome != _TrainingCreateOutcome.idle ? null : _saveTrainingExample, icon: const Icon(Icons.playlist_add), label: Text(_savingExample ? 'Đang lưu...' : _createOutcome == _TrainingCreateOutcome.submitting ? 'Đang gửi...' : 'Lưu ví dụ chờ duyệt'))),
                   if (_trainingCreateError != null) ...[
                     const SizedBox(height: 8),
                     Text(
@@ -933,6 +1363,8 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                       style: TextStyle(color: Theme.of(context).colorScheme.error),
                     ),
                   ],
+                  if (_createOutcome != _TrainingCreateOutcome.idle)
+                    _buildCreateOutcomePanel(),
                   const Divider(height: 24),
                   if (_trainingDataLoading) ...[
                     const LinearProgressIndicator(),
