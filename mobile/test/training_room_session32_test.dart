@@ -797,6 +797,49 @@ void main() {
     client.close();
   });
 
+  testWidgets('reconcile List 401 expires session once and keeps Create locked', (tester) async {
+    var postCount = 0;
+    var snapshotCalls = 0;
+    final expired = <String>[];
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+      if (request.url.path == '/api/v1/training/examples' && request.method == 'GET') {
+        final limit = int.parse(request.url.queryParameters['limit']!);
+        final offset = int.parse(request.url.queryParameters['offset']!);
+        if (limit == 500) {
+          snapshotCalls++;
+          if (snapshotCalls == 2) return http.Response('PRIVATE_RECONCILE_401', 401);
+        }
+        return _json(200, _list([], limit: limit, offset: offset));
+      }
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+      if (request.method == 'POST' && request.url.path == '/api/v1/training/examples') {
+        postCount++;
+        return http.Response('PRIVATE_CREATE_500', 500);
+      }
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+    await _pump(tester, client, onSessionExpired: expired.add);
+    await _fillCreate(tester);
+    await tester.tap(find.byKey(const ValueKey('training-create-submit')));
+    await tester.pumpAndSettle();
+    expect(postCount, 1);
+    await tester.ensureVisible(find.byKey(const ValueKey('training-create-reconcile')));
+    await tester.tap(find.byKey(const ValueKey('training-create-reconcile')));
+    await tester.pumpAndSettle();
+    expect(snapshotCalls, 2);
+    expect(postCount, 1);
+    expect(expired, [_token]);
+    expect(find.text('Chưa đối soát đầy đủ'), findsOneWidget);
+    expect(find.textContaining('Phiên đăng nhập đã hết hạn trong khi đối soát'), findsOneWidget);
+    expect(tester.widget<OutlinedButton>(
+      find.byKey(const ValueKey('training-create-reconcile')),
+    ).onPressed, isNull);
+    expect(find.textContaining('PRIVATE_RECONCILE_401'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    client.close();
+  });
+
   testWidgets('Create 409 reconciles List and never blindly retries POST', (tester) async {
     var postCount = 0;
     var listOnlyCalls = 0;

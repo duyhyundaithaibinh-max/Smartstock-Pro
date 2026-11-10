@@ -366,11 +366,12 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         }
       });
     } catch (error) {
-      if (mounted && !_sessionExpired) {
+      if (mounted) {
         setState(() {
           _createOutcome = _TrainingCreateOutcome.reconcileFailed;
-          _createOutcomeMessage =
-              'Chưa đối soát được danh sách: ${_safeError(error, 'Danh sách chưa đọc được đầy đủ. Vui lòng thử GET lại.')}';
+          _createOutcomeMessage = _sessionExpired
+              ? 'Phiên đăng nhập đã hết hạn trong khi đối soát. Hãy đăng nhập lại; không gửi thêm Create.'
+              : 'Chưa đối soát được danh sách: ${_safeError(error, 'Danh sách chưa đọc được đầy đủ. Vui lòng thử GET lại.')}';
         });
       }
     }
