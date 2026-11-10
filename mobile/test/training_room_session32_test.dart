@@ -189,7 +189,10 @@ void main() {
     expect(expired, isEmpty);
     expect(find.byKey(const ValueKey('training-data-retry')), findsOneWidget);
     expect(find.textContaining('PRIVATE_'), findsNothing);
-    await tester.tap(find.byKey(const ValueKey('training-data-retry')));
+    final retry = find.byKey(const ValueKey('training-data-retry'));
+    await tester.ensureVisible(retry);
+    await tester.pumpAndSettle();
+    await tester.tap(retry);
     await tester.pumpAndSettle();
     expect(listCalls, 2);
     expect(evaluationCalls, 2);
@@ -239,6 +242,7 @@ void main() {
       await tester.tap(submit);
       await tester.pumpAndSettle();
       expect(postCount, 0);
+      expect(find.byKey(const ValueKey('training-create-error')), findsOneWidget);
       expect(find.textContaining('Câu hỏi cần'), findsOneWidget);
     }
     expect(expired, isEmpty);
@@ -421,7 +425,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(postCount, 1);
     expect(find.textContaining('PRIVATE_CREATE_500_BODY'), findsNothing);
-    expect(tester.widget<TextField>(find.byKey(const ValueKey('training-create-question'))).controller!.text, _question);
+    expect(tester.widget<TextField>(find.byKey(const ValueKey('training-create-question'))).controller!.text, '  $_question  ');
     await tester.tap(submit);
     await tester.pumpAndSettle();
     expect(postCount, 2);
@@ -436,12 +440,12 @@ void main() {
     final expired = <String>[];
     final client = MockClient((request) async {
       if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
-      if (request.url.path == '/api/v1/training/examples') return _json(200, _list([]));
-      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
       if (request.method == 'POST' && request.url.path == '/api/v1/training/examples') {
         postCount++;
         return http.Response('PRIVATE_CREATE_401_BODY', 401);
       }
+      if (request.method == 'GET' && request.url.path == '/api/v1/training/examples') return _json(200, _list([]));
+      if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
       fail('Unexpected request: ${request.method} ${request.url}');
     });
     await _pump(tester, client, onSessionExpired: expired.add);

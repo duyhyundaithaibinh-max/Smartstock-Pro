@@ -54,6 +54,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
   List<dynamic> _examples = [];
   Map<String, dynamic>? _evaluation;
   bool _savingExample = false;
+  String? _trainingCreateError;
   bool _trainingDataLoading = false;
   bool _exportingTraining = false;
   final Set<String> _citationLoadingIds = <String>{};
@@ -196,10 +197,10 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         topic.length > 80 || citations.isEmpty || citations.length > 10 ||
         citations.any((item) => !citationPattern.hasMatch(item)) ||
         citations.toSet().length != citations.length) {
-      setState(() => _error = 'Câu hỏi cần 10–1.000 ký tự, đáp án 20–5.000 ký tự, chủ đề tối đa 80 ký tự; cần 1–10 mã nguồn kb:document_id:chunk_index hợp lệ và không trùng.');
+      setState(() => _trainingCreateError = 'Câu hỏi cần 10–1.000 ký tự, đáp án 20–5.000 ký tự, chủ đề tối đa 80 ký tự; cần 1–10 mã nguồn kb:document_id:chunk_index hợp lệ và không trùng.');
       return;
     }
-    setState(() { _savingExample = true; _error = null; });
+    setState(() { _savingExample = true; _error = null; _trainingCreateError = null; });
     try {
       final response = await _httpClient.post(
         _uri('/api/v1/training/examples'),
@@ -218,7 +219,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
       if (!mounted || _sessionExpired) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã lưu ví dụ ở trạng thái chờ duyệt.')));
     } catch (error) {
-      if (mounted) setState(() => _error = 'Không lưu được ví dụ: ${_safeError(error, 'Đã xảy ra lỗi khi lưu ví dụ.')}');
+      if (mounted) setState(() => _trainingCreateError = 'Không lưu được ví dụ: ${_safeError(error, 'Đã xảy ra lỗi khi lưu ví dụ.')}');
     } finally {
       if (mounted) setState(() => _savingExample = false);
     }
@@ -923,7 +924,15 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                   const SizedBox(height: 8),
                   TextField(key: const ValueKey('training-create-citations'), controller: _trainingCitationsController, enabled: !_savingExample, maxLength: 1000, decoration: const InputDecoration(labelText: 'Mã nguồn (kb:document:chunk)', helperText: 'Lấy citation_id từ kết quả tra cứu kho tri thức; phân tách nhiều mã bằng dấu phẩy.', border: OutlineInputBorder())),
                   const SizedBox(height: 10),
-                  SizedBox(width: double.infinity, child: FilledButton.icon(key: const ValueKey('training-create-submit'), onPressed: _savingExample ? null : _saveTrainingExample, icon: const Icon(Icons.playlist_add), label: Text(_savingExample ? 'Đang lưu...' : 'Lưu ví dụ chờ duyệt'))),
+                  SizedBox(width: double.infinity, child: FilledButton.icon(key: const ValueKey('training-create-submit'), onPressed: _savingExample || _sessionExpired ? null : _saveTrainingExample, icon: const Icon(Icons.playlist_add), label: Text(_savingExample ? 'Đang lưu...' : 'Lưu ví dụ chờ duyệt'))),
+                  if (_trainingCreateError != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      _trainingCreateError!,
+                      key: const ValueKey('training-create-error'),
+                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    ),
+                  ],
                   const Divider(height: 24),
                   if (_trainingDataLoading) ...[
                     const LinearProgressIndicator(),
