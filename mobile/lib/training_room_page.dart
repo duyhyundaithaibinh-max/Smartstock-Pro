@@ -249,8 +249,8 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
     final normalized = '${parsed.year.toString().padLeft(4, '0')}-'
         '${parsed.month.toString().padLeft(2, '0')}-'
         '${parsed.day.toString().padLeft(2, '0')} '
-        '${parsed.hour.toString().padLeft(2, '0')}:''
-        '${parsed.minute.toString().padLeft(2, '0')}:''
+        '${parsed.hour.toString().padLeft(2, '0')}:'
+        '${parsed.minute.toString().padLeft(2, '0')}:'
         '${parsed.second.toString().padLeft(2, '0')}';
     return value == normalized;
   }
