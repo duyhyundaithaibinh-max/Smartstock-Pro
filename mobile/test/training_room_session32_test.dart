@@ -1025,6 +1025,49 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     client.close();
   });
+  for (final fault in ['changed-total', 'duplicate-id']) {
+    testWidgets('reconcile fails closed for pagination consistency fault', (tester) async {
+      var postCount = 0;
+      var snapshotPhase = 0;
+      final firstPage = List<Map<String, dynamic>>.generate(
+        500,
+        (index) => {..._example(id: index + 1), 'question': 'Existing row question number ' + index.toString()},
+      );
+      final client = MockClient((request) async {
+        if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
+        if (request.url.path == '/api/v1/training/examples' && request.method == 'GET') {
+          final limit = int.parse(request.url.queryParameters['limit']!);
+          final offset = int.parse(request.url.queryParameters['offset']!);
+          if (limit == 500) {
+            if (snapshotPhase++ == 0) return _json(200, _list([], limit: limit, offset: offset));
+            if (offset == 0) return _json(200, _list(firstPage, limit: limit, offset: offset, total: 501));
+            if (fault == 'changed-total') return _json(200, _list([_example(id: 900)], limit: limit, offset: offset, total: 502));
+            return _json(200, _list([_example(id: 1)], limit: limit, offset: offset, total: 501));
+          }
+          return _json(200, _list([], limit: limit, offset: offset));
+        }
+        if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
+        if (request.method == 'POST' && request.url.path == '/api/v1/training/examples') {
+          postCount++;
+          return http.Response('PRIVATE_CREATE_500', 500);
+        }
+        fail('Unexpected request');
+      });
+      await _pump(tester, client);
+      await _fillCreate(tester);
+      await tester.tap(find.byKey(const ValueKey('training-create-submit')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const ValueKey('training-create-reconcile')));
+      await tester.tap(find.byKey(const ValueKey('training-create-reconcile')));
+      await tester.pumpAndSettle();
+      expect(postCount, 1);
+      expect(find.text('Chưa đối soát đầy đủ'), findsOneWidget);
+      expect(find.byKey(const ValueKey('training-create-retry-review')), findsNothing);
+      expect(find.byKey(const ValueKey('training-create-reconcile')), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      client.close();
+    });
+  }
   testWidgets('approve posts once with owner token and refreshes row after 200', (tester) async {
     var listCalls = 0;
     http.Request? approveRequest;
