@@ -31,6 +31,7 @@ enum _TrainingCreateOutcome {
   ambiguousMatch,
   notFoundInSnapshot,
   reconcileFailed,
+  sessionExpired,
 }
 
 class _TrainingExamplesSnapshot {
@@ -289,6 +290,16 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
           );
         }
         final id = rawItem['id'];
+        final status = rawItem['status'];
+        final createdAt = rawItem['created_at'];
+        if (status is! String ||
+            !const {'draft', 'approved', 'rejected'}.contains(status) ||
+            createdAt is! String ||
+            DateTime.tryParse(createdAt) == null) {
+          throw const SafeApiException(
+            'Danh sách đối soát có status hoặc created_at không hợp lệ.',
+          );
+        }
         if (id is! int || id <= 0 || !ids.add(id) ||
             _normalizedTrainingTuple(rawItem) == null) {
           throw const SafeApiException(
@@ -479,6 +490,8 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
                   'Không tìm thấy bản ghi mới trong snapshot',
                 _TrainingCreateOutcome.reconcileFailed =>
                   'Chưa đối soát đầy đủ',
+                _TrainingCreateOutcome.sessionExpired =>
+                  'Phiên đăng nhập đã hết hạn',
                 _ => 'Đang xử lý Create',
               },
               style: Theme.of(context).textTheme.titleMedium,
@@ -495,8 +508,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
               ...details.map((item) => Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
-                  'ID ${item['id']} • ${item['status'] ?? 'draft'}'
-                  '${item['created_at'] is String ? ' • ${item['created_at']}' : ''}',
+                  'ID ${item['id']} • ${item['status']} • ${item['created_at']}',
                   key: ValueKey('training-create-match-${item['id']}'),
                 ),
               )),
@@ -619,8 +631,14 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         ),
       );
     } catch (error) {
-      if (!mounted || _sessionExpired) return;
-      if (!postDispatched) {
+      if (!mounted) return;
+      if (_sessionExpired) {
+        setState(() {
+          _createOutcome = _TrainingCreateOutcome.sessionExpired;
+          _createOutcomeMessage =
+              'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại; Create bị khóa và không gửi thêm yêu cầu.';
+        });
+      } else if (!postDispatched) {
         setState(() {
           _createOutcome = _TrainingCreateOutcome.idle;
           _pendingCreatePayload = null;
@@ -628,10 +646,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
           _trainingCreateError =
               'Chưa gửi Create vì không thể đọc đầy đủ danh sách trước khi gửi: ${_safeError(error, 'Không thể xác minh danh sách hiện tại. Vui lòng thử lại.')}';
         });
-      } else if (error is ApiRequestException &&
-          error.statusCode >= 400 &&
-          error.statusCode < 500 &&
-          error.statusCode != 409) {
+      } else if (error is ApiRequestException && error.statusCode == 422) {
         setState(() {
           _createOutcome = _TrainingCreateOutcome.idle;
           _pendingCreatePayload = null;
@@ -645,7 +660,9 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
           _createOutcomeMessage = error is ApiRequestException &&
                   error.statusCode == 409
               ? 'Máy chủ trả về xung đột. Cần đối soát danh sách trước khi quyết định; không tự gửi lại.'
-              : 'Máy chủ chưa xác nhận kết quả lần gửi. Giữ nguyên nội dung; không tự gửi lại vì yêu cầu cũ có thể đã được lưu.';
+              : error is ApiRequestException
+                  ? 'Máy chủ trả về HTTP ${error.statusCode} nhưng hợp đồng chưa xác nhận chắc chắn yêu cầu không được lưu. Giữ nguyên payload; chỉ đối soát bằng GET, không tự gửi lại.'
+                  : 'Máy chủ chưa xác nhận kết quả lần gửi. Giữ nguyên nội dung; không tự gửi lại vì yêu cầu cũ có thể đã được lưu.';
         });
         if (error is ApiRequestException && error.statusCode == 409) {
           await _reconcileUnknownCreate();
