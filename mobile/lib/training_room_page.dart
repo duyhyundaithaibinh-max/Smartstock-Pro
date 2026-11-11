@@ -254,6 +254,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         '${parsed.second.toString().padLeft(2, '0')}';
     return value == normalized;
   }
+
   Future<_TrainingExamplesSnapshot> _fetchTrainingExamplesSnapshot() async {
     const pageSize = 500;
     var offset = 0;
