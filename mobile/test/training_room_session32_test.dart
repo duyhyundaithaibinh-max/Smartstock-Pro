@@ -943,7 +943,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(postCount, 1);
       expect(find.text('Kết quả gửi chưa xác định'), findsOneWidget);
-      expect(find.textContaining('HTTP $status), findsOneWidget);
+      expect(find.textContaining('HTTP $status'), findsOneWidget);
       expect(tester.widget<FilledButton>(submit).onPressed, isNull);
       expect(tester.widget<TextField>(find.byKey(const ValueKey('training-create-question'))).enabled, isFalse);
       expect(find.textContaining('PRIVATE_CREATE_STATUS'), findsNothing);
@@ -1031,7 +1031,7 @@ void main() {
       var snapshotPhase = 0;
       final firstPage = List<Map<String, dynamic>>.generate(
         500,
-        (index) => {..._example(id: index + 1), 'question': 'Existing row question number $index},
+        (index) => {..._example(id: index + 1), 'question': 'Existing row question number $index'},
       );
       final client = MockClient((request) async {
         if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
