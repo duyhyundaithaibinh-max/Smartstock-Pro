@@ -25,7 +25,7 @@ Map<String, dynamic> _evaluation({int total = 0, int draft = 0, int approved = 0
 Map<String, dynamic> _example({int id = 41, String status = 'draft'}) => {
   'id': id, 'question': _question, 'expected_answer': _answer,
   'topic': 'fibonacci', 'citation_ids': ['kb:7:2'],
-  'status': status, 'created_at': '2026-01-15T10:30:00Z', 'revision': 1,
+  'status': status, 'created_at': '2026-01-15 10:30:00', 'revision': 1,
 };
 
 Map<String, dynamic> _list(
@@ -610,9 +610,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Chưa đối soát đầy đủ'), findsOneWidget);
     expect(postCount, 1);
+    expect(reconcileCalls, 2); // Baseline snapshot + first reconciliation GET.
     final reconcile = find.byKey(const ValueKey('training-create-reconcile'));
     await tester.ensureVisible(reconcile);
+    await tester.pumpAndSettle();
+    expect(tester.widget<OutlinedButton>(reconcile).onPressed, isNotNull);
     await tester.tap(reconcile);
+    await tester.pump();
     await tester.pumpAndSettle();
     expect(reconcileCalls, 3);
     expect(postCount, 1);
@@ -924,9 +928,9 @@ void main() {
       final client = MockClient((request) async {
         if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
         if (request.url.path == '/api/v1/training/examples' && request.method == 'GET') {
-          listGets++;
           final limit = int.parse(request.url.queryParameters['limit']!);
           final offset = int.parse(request.url.queryParameters['offset']!);
+          if (limit == 500) listGets++;
           return _json(200, _list([], limit: limit, offset: offset));
         }
         if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
@@ -959,22 +963,26 @@ void main() {
     });
   }
 
-  for (final malformed in ['missing-status', 'invalid-status', 'missing-created-at', 'invalid-created-at']) {
+  for (final malformed in ['missing-status', 'invalid-status', 'missing-created-at', 'invalid-created-at', 'wrong-created-at-format']) {
     testWidgets('reconcile rejects malformed List row', (tester) async {
       var postCount = 0;
-      var listGets = 0;
+      var snapshotGets = 0;
       final row = _example();
       if (malformed == 'missing-status') row.remove('status');
       if (malformed == 'invalid-status') row['status'] = 'archived';
       if (malformed == 'missing-created-at') row.remove('created_at');
       if (malformed == 'invalid-created-at') row['created_at'] = 'not-a-date';
+      if (malformed == 'wrong-created-at-format') row['created_at'] = '2026-01-15T10:30:00Z';
       final client = MockClient((request) async {
         if (request.url.path == '/api/v1/knowledge/documents') return _json(200, {'items': []});
         if (request.url.path == '/api/v1/training/examples' && request.method == 'GET') {
-          listGets++;
           final limit = int.parse(request.url.queryParameters['limit']!);
           final offset = int.parse(request.url.queryParameters['offset']!);
-          return _json(200, _list(listGets == 1 ? [] : [row], limit: limit, offset: offset));
+          if (limit == 500) {
+            snapshotGets++;
+            return _json(200, _list(snapshotGets == 1 ? [] : [row], limit: limit, offset: offset));
+          }
+          return _json(200, _list([], limit: limit, offset: offset));
         }
         if (request.url.path == '/api/v1/training/evaluation') return _json(200, _evaluation());
         if (request.method == 'POST' && request.url.path == '/api/v1/training/examples') {
@@ -991,7 +999,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('training-create-reconcile')));
       await tester.pumpAndSettle();
       expect(postCount, 1);
-      expect(listGets, 2);
+      expect(snapshotGets, 2);
       expect(find.text('Chưa đối soát đầy đủ'), findsOneWidget);
       expect(find.textContaining('status hoặc created_at không hợp lệ'), findsOneWidget);
       expect(find.byKey(const ValueKey('training-create-match-41')), findsNothing);
