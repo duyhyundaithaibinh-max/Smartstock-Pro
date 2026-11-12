@@ -239,16 +239,21 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         jsonEncode(rowTuple) == jsonEncode(payloadTuple);
   }
 
-  bool _isBackendSqliteTimestamp(String value) {
-    if (!RegExp(r'^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$')
-        .hasMatch(value)) {
-      return false;
-    }
+  bool _isBackendTrainingTimestamp(String value) {
+    final isCanonicalSqlite = RegExp(
+      r'^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$',
+    ).hasMatch(value);
+    final isPreservedLegacyIso = RegExp(
+      r'^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$',
+    ).hasMatch(value);
+    if (!isCanonicalSqlite && !isPreservedLegacyIso) return false;
+
     final parsed = DateTime.tryParse(value);
     if (parsed == null) return false;
+    final separator = isCanonicalSqlite ? ' ' : 'T';
     final normalized = '${parsed.year.toString().padLeft(4, '0')}-'
         '${parsed.month.toString().padLeft(2, '0')}-'
-        '${parsed.day.toString().padLeft(2, '0')} '
+        '${parsed.day.toString().padLeft(2, '0')}$separator'
         '${parsed.hour.toString().padLeft(2, '0')}:'
         '${parsed.minute.toString().padLeft(2, '0')}:'
         '${parsed.second.toString().padLeft(2, '0')}';
@@ -311,7 +316,7 @@ class _TrainingRoomPageState extends State<TrainingRoomPage> {
         if (status is! String ||
             !const {'draft', 'approved', 'rejected'}.contains(status) ||
             createdAt is! String ||
-            !_isBackendSqliteTimestamp(createdAt)) {
+            !_isBackendTrainingTimestamp(createdAt)) {
           throw const SafeApiException(
             'Danh sách đối soát có status hoặc created_at không hợp lệ.',
           );

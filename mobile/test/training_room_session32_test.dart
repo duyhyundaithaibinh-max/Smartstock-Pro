@@ -1010,6 +1010,126 @@ void main() {
     });
   }
 
+  testWidgets(
+    'preserved legacy ISO timestamps pass preflight and reconciliation',
+    (tester) async {
+      var postCount = 0;
+      var snapshotGets = 0;
+      final legacyBaseline = {
+        ..._example(id: 41),
+        'created_at': '2026-03-01T00:00:00',
+      };
+      final legacyCandidate = {
+        ..._example(id: 42),
+        'created_at': '2026-03-03T00:00:00',
+      };
+      final client = MockClient((request) async {
+        if (request.url.path == '/api/v1/knowledge/documents') {
+          return _json(200, {'items': []});
+        }
+        if (request.url.path == '/api/v1/training/examples' &&
+            request.method == 'GET') {
+          final limit = int.parse(request.url.queryParameters['limit']!);
+          final offset = int.parse(request.url.queryParameters['offset']!);
+          if (limit == 500) {
+            snapshotGets++;
+            final rows = snapshotGets == 1
+                ? [legacyBaseline]
+                : [legacyBaseline, legacyCandidate];
+            return _json(200, _list(rows, limit: limit, offset: offset));
+          }
+          return _json(200, _list([], limit: limit, offset: offset));
+        }
+        if (request.url.path == '/api/v1/training/evaluation') {
+          return _json(200, _evaluation());
+        }
+        if (request.method == 'POST' &&
+            request.url.path == '/api/v1/training/examples') {
+          postCount++;
+          return http.Response('PRIVATE_CREATE_500', 500);
+        }
+        fail('Unexpected request: ${request.method} ${request.url}');
+      });
+
+      await _pump(tester, client);
+      await _fillCreate(tester);
+      await tester.tap(find.byKey(const ValueKey('training-create-submit')));
+      await tester.pumpAndSettle();
+
+      // The migrated legacy row is accepted by the preflight snapshot.
+      expect(snapshotGets, 1);
+      expect(postCount, 1);
+      expect(find.text('Kết quả gửi chưa xác định'), findsOneWidget);
+
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('training-create-reconcile')),
+      );
+      await tester.tap(find.byKey(const ValueKey('training-create-reconcile')));
+      await tester.pumpAndSettle();
+
+      // The same legacy representation is accepted during GET-only reconciliation.
+      expect(snapshotGets, 2);
+      expect(postCount, 1);
+      expect(find.text('Có bản ghi có khả năng khớp'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('training-create-match-42')),
+        findsOneWidget,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      client.close();
+    },
+  );
+
+  testWidgets(
+    'preflight rejects parseable ISO timestamp outside preserved legacy format',
+    (tester) async {
+      var postCount = 0;
+      final malformedLegacy = {
+        ..._example(),
+        'created_at': '2026-03-01T00:00:00Z',
+      };
+      final client = MockClient((request) async {
+        if (request.url.path == '/api/v1/knowledge/documents') {
+          return _json(200, {'items': []});
+        }
+        if (request.url.path == '/api/v1/training/examples' &&
+            request.method == 'GET') {
+          final limit = int.parse(request.url.queryParameters['limit']!);
+          final offset = int.parse(request.url.queryParameters['offset']!);
+          return _json(
+            200,
+            _list(
+              limit == 500 ? [malformedLegacy] : [],
+              limit: limit,
+              offset: offset,
+            ),
+          );
+        }
+        if (request.url.path == '/api/v1/training/evaluation') {
+          return _json(200, _evaluation());
+        }
+        if (request.method == 'POST' &&
+            request.url.path == '/api/v1/training/examples') {
+          postCount++;
+          return _json(201, _example(id: 99));
+        }
+        fail('Unexpected request: ${request.method} ${request.url}');
+      });
+
+      await _pump(tester, client);
+      await _fillCreate(tester);
+      await tester.tap(find.byKey(const ValueKey('training-create-submit')));
+      await tester.pumpAndSettle();
+
+      expect(postCount, 0);
+      expect(find.textContaining('Chưa gửi Create'), findsOneWidget);
+      expect(find.text('Đang gửi...'), findsNothing);
+      expect(find.text('Kết quả gửi chưa xác định'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      client.close();
+    },
+  );
+
   testWidgets('malformed preflight List row prevents Create POST', (tester) async {
     var postCount = 0;
     final client = MockClient((request) async {
