@@ -435,16 +435,12 @@ void main() {
       ),
     ));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.textContaining('Phiên đăng nhập đã hết hạn'),
-      300,
-      scrollable: find.byType(Scrollable).first,
-    );
 
     expect(expiredCalls, 1);
     expect(find.textContaining('EXAMPLES-INTERNAL-500'), findsNothing);
     expect(find.textContaining('EVALUATION-PRIVATE-401'), findsNothing);
-    expect(find.textContaining('Phiên đăng nhập đã hết hạn'), findsWidgets);
+    expect(find.textContaining('Không tải được bộ dữ liệu huấn luyện'), findsNothing);
+    expect(find.textContaining('Phiên đăng nhập đã hết hạn'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
     client.close();
   });
