@@ -30,13 +30,33 @@ The helper command and volume path have automated/source-level checks only; the 
 
 ## 3. HTTPS, trusted LAN, firewall and port exposure
 
-- The current Compose mapping \`8000:8000\` publishes the API on host interfaces. Do not assume it is loopback-only.
-- For a host-local deployment, override the published mapping to \`127.0.0.1:8000:8000\`; expose it only through a locally controlled client or a reverse proxy.
-- For remote/LAN access, terminate HTTPS at a maintained reverse proxy, restrict inbound firewall rules to explicitly trusted client networks, and do not expose TCP 8000 directly to the Internet.
-- Do not enter the bootstrap secret or owner credentials over plain HTTP on shared Wi-Fi, guest Wi-Fi or an otherwise untrusted network. A trusted LAN is a compensating control, not encryption.
-- Verify from a second machine that port 8000 is unreachable unless intentionally allowed, and verify the HTTPS certificate/hostname and redirect/proxy behavior. Record the host, date and firewall/proxy configuration in the deployment record.
-- No TLS proxy or firewall smoke test is claimed by this repository's CI.
+### Default: local-only host binding
 
+Docker Compose publishes the API as `127.0.0.1:8000:8000` by default through `SMARTSTOCK_BIND_ADDRESS`'s loopback fallback. The container still listens on port `8000`; only the host-side bind address changes.
+
+1. Start the service without setting `SMARTSTOCK_BIND_ADDRESS`: `docker compose up -d --build`.
+2. Inspect the resolved configuration: `docker compose config`. Under `services.api.ports`, verify the published port is `8000`, the target is `8000`, and the host IP is exactly `127.0.0.1`.
+3. On the host, verify the listener with an OS-appropriate command such as `ss -ltn` (Linux) or `netstat -an`; the published listener must be loopback, not a wildcard address.
+4. Keep the variable unset for host-local use. Local clients connect through `http://127.0.0.1:8000`.
+
+### Explicit LAN opt-in (not a security feature)
+
+Only if LAN access is intentionally required, bind to the host's specific LAN interface address, for example:
+
+```sh
+SMARTSTOCK_BIND_ADDRESS=192.168.1.10 docker compose up -d --build
+```
+
+Replace the example with an IP actually assigned to the host. The same value can be placed in a protected local `.env` file for Compose interpolation. Do not use `0.0.0.0` or another wildcard; do not set this variable for local-only use. After changing the bind address, run `docker compose config` again and verify the resolved `host_ip` is the intended address.
+
+A LAN bind opt-in does **not** make the HTTP API safe for remote access:
+
+- Terminate HTTPS at a maintained reverse proxy before accepting LAN/remote credentials.
+- Restrict inbound firewall rules to explicitly trusted client networks and expose only the proxy's TLS port; do not expose TCP 8000 directly to the Internet.
+- Do not enter the bootstrap secret or owner credentials over plain HTTP on shared Wi-Fi, guest Wi-Fi or an otherwise untrusted network. A trusted LAN is a compensating control, not encryption.
+- Verify from a second machine that the API port is unreachable except where intentionally allowed; verify the HTTPS certificate/hostname and proxy behavior. Record host, date and firewall/proxy configuration in the deployment record.
+
+The local-only default reduces accidental host-interface exposure; it does not implement login/bootstrap rate limiting and does not prove TLS, firewall or LAN deployment safety. No TLS proxy or firewall smoke test is claimed by this repository's CI.
 ## 4. SQLite backup and restore
 
 ### Consistent online database backup

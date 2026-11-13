@@ -3,7 +3,7 @@ services:
     build:
       context: ./backend
     ports:
-      - "8000:8000"
+      - "${SMARTSTOCK_BIND_ADDRESS:-127.0.0.1}:8000:8000"
     environment:
       SMARTSTOCK_DB_PATH: /data/smartstock.db
       SMARTSTOCK_BOOTSTRAP_SECRET_FILE: /data/bootstrap.secret
