@@ -5,8 +5,9 @@ These tests never access Docker volumes or a deployment database.
 """
 from __future__ import annotations
 
-import hashlib
 from contextlib import closing
+import hashlib
+import os
 import shutil
 import sqlite3
 import tempfile
@@ -137,17 +138,41 @@ def _bootstrap_pair_matches(database_path: Path, secret_path: Path) -> bool:
 class SQLiteBackupRestoreTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
         self.root = Path(self.temp_dir.name)
         self.source_path = self.root / "source" / "smartstock.db"
+        self.secret_path = self.root / "bootstrap" / "bootstrap.secret"
+
+        # Override any host/CI setting before auth bootstrap code can resolve
+        # its secret path. Keep the patch active through test cleanup.
+        self.env_patch = patch.dict(
+            os.environ,
+            {"SMARTSTOCK_BOOTSTRAP_SECRET_FILE": str(self.secret_path)},
+        )
+        self.env_patch.start()
+        self.addCleanup(self.env_patch.stop)
+
         self.db_patch = patch("app.db.DB_PATH", str(self.source_path))
         self.db_patch.start()
+        self.addCleanup(self.db_patch.stop)
+
+        resolved_secret_path = auth._bootstrap_secret_path().resolve()
+        try:
+            resolved_secret_path.relative_to(self.root.resolve())
+        except ValueError:
+            self.fail("bootstrap secret path escaped the test TemporaryDirectory")
+
         db.init_db()
         auth.ensure_bootstrap_secret()
         self.bootstrap_secret = auth.read_bootstrap_secret()
 
-    def tearDown(self):
-        self.db_patch.stop()
-        self.temp_dir.cleanup()
+    def _assert_manifest_equal(self, expected, actual, context):
+        # Do not let unittest render rows containing password salts/hashes,
+        # bearer-token digests, or bootstrap-secret digests into failure logs.
+        self.assertTrue(
+            expected == actual,
+            f"{context}: database manifest mismatch (credential values redacted)",
+        )
 
     def _seed_application_data(self) -> tuple[str, int, int]:
         with db.connection() as conn:
@@ -223,11 +248,15 @@ class SQLiteBackupRestoreTests(unittest.TestCase):
         shutil.copy2(backup_path, restored_path)
         _verify_backup(restored_path)
         self.assertNotEqual(restored_path.resolve(), self.source_path.resolve())
-        self.assertEqual(before, _database_manifest(restored_path))
+        self._assert_manifest_equal(
+            before, _database_manifest(restored_path), "backup restore"
+        )
 
         with patch("app.db.DB_PATH", str(restored_path)):
             db.init_db()
-            self.assertEqual(before, _database_manifest(restored_path))
+            self._assert_manifest_equal(
+                before, _database_manifest(restored_path), "db.init_db after restore"
+            )
             self.assertIsNotNone(auth.authenticate(token))
 
             document = knowledge_base.get_document(document_id, include_chunks=True)
@@ -300,7 +329,9 @@ class SQLiteBackupRestoreTests(unittest.TestCase):
             source_sha_before,
         )
         self.assertFalse((restored_path.parent / "bootstrap.secret").exists())
-        self.assertFalse(auth._bootstrap_secret_path().exists())
+        resolved_secret_path = auth._bootstrap_secret_path().resolve()
+        self.assertTrue(resolved_secret_path.is_relative_to(self.root.resolve()))
+        self.assertFalse(resolved_secret_path.exists())
 
     def test_missing_empty_truncated_and_non_sqlite_backups_fail_closed(self):
         missing = self.root / "missing.db"
