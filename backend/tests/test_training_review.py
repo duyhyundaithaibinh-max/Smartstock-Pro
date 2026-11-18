@@ -738,5 +738,333 @@ class TrainingReviewApiTests(unittest.TestCase):
             self.assertEqual(event["reviewer_label"], "Legacy shared token")
 
 
+    def _build_pr25_migration_fixture(self, path):
+        """Build the review schema as it existed at PR #25 base SHA 585ee08."""
+        conn = sqlite3.connect(path)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("CREATE TABLE auth_users(id INTEGER PRIMARY KEY)")
+        conn.execute("INSERT INTO auth_users(id) VALUES(1)")
+        conn.execute("""
+            CREATE TABLE training_examples (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                question TEXT NOT NULL,
+                expected_answer TEXT NOT NULL,
+                topic TEXT NOT NULL DEFAULT 'general',
+                citation_ids TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('draft','approved','rejected')) DEFAULT 'draft',
+                revision INTEGER NOT NULL DEFAULT 1 CHECK(revision >= 1),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX idx_training_examples_status_created "
+            "ON training_examples(status, created_at)"
+        )
+        conn.executemany("""
+            INSERT INTO training_examples
+                (id,question,expected_answer,topic,citation_ids,status,revision,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?)
+        """, [
+            (51, "Legacy draft question", "Legacy draft answer", "elliott",
+             '["kb:1:0"]', "draft", 2, "2026-03-01T00:00:00", "2026-03-02T00:00:00"),
+            (52, "Already approved question", "Approved answer", "fibonacci",
+             '["kb:2:0"]', "approved", 1, "2026-03-03T00:00:00", "2026-03-04T00:00:00"),
+            (53, "Rejected question", "Rejected answer", "volume",
+             '["kb:3:0"]', "rejected", 1, "2026-03-05T00:00:00", "2026-03-06T00:00:00"),
+        ])
+        # PR #25 event table: approved was not yet an allowed action and
+        # reviewer_label had not yet been introduced.
+        conn.execute("""
+            CREATE TABLE training_example_review_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                example_id INTEGER NOT NULL,
+                action TEXT NOT NULL CHECK(action IN ('rejected','edited')),
+                reason TEXT,
+                revision_from INTEGER NOT NULL CHECK(revision_from >= 1),
+                revision_to INTEGER NOT NULL CHECK(revision_to >= revision_from),
+                changed_fields TEXT NOT NULL DEFAULT '[]',
+                reviewer_user_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(example_id) REFERENCES training_examples(id) ON DELETE CASCADE,
+                FOREIGN KEY(reviewer_user_id) REFERENCES auth_users(id) ON DELETE RESTRICT,
+                CHECK((action='rejected' AND reason IS NOT NULL AND revision_to=revision_from)
+                   OR (action='edited' AND reason IS NULL AND revision_to=revision_from+1))
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX idx_training_review_events_example
+            ON training_example_review_events(example_id, created_at, id)
+        """)
+        conn.execute("""
+            CREATE TRIGGER trg_training_review_events_no_update
+            BEFORE UPDATE ON training_example_review_events
+            BEGIN SELECT RAISE(ABORT, 'training review events are append-only'); END
+        """)
+        conn.execute("""
+            CREATE TRIGGER trg_training_review_events_no_delete
+            BEFORE DELETE ON training_example_review_events
+            WHEN EXISTS (SELECT 1 FROM training_examples WHERE id=OLD.example_id)
+            BEGIN SELECT RAISE(ABORT, 'training review events are append-only'); END
+        """)
+        conn.executemany("""
+            INSERT INTO training_example_review_events
+                (id,example_id,action,reason,revision_from,revision_to,changed_fields,
+                 reviewer_user_id,created_at)
+            VALUES(?,?,?,?,?,?,?,?,?)
+        """, [
+            (71, 51, "edited", None, 1, 2, '["topic"]', 1, "2026-03-07T00:00:00"),
+            (72, 53, "rejected", "Legacy rejection reason", 1, 1, "[]", 1,
+             "2026-03-08T00:00:00"),
+        ])
+        # Quality history already existed on PR #25 and must not be rebuilt
+        # or dropped while the lifecycle event table is migrated.
+        conn.execute("""
+            CREATE TABLE training_example_quality_reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                example_id INTEGER NOT NULL,
+                example_revision INTEGER NOT NULL CHECK(example_revision >= 1),
+                score INTEGER NOT NULL CHECK(typeof(score)='integer' AND score BETWEEN 0 AND 100),
+                rubric_version TEXT NOT NULL,
+                rationale TEXT NOT NULL,
+                reviewer_user_id INTEGER NOT NULL,
+                reviewed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(example_id) REFERENCES training_examples(id) ON DELETE CASCADE,
+                FOREIGN KEY(reviewer_user_id) REFERENCES auth_users(id) ON DELETE RESTRICT
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX idx_training_quality_reviews_example
+            ON training_example_quality_reviews(example_id, example_revision, reviewed_at, id)
+        """)
+        conn.execute("""
+            CREATE TRIGGER trg_training_quality_reviews_no_update
+            BEFORE UPDATE ON training_example_quality_reviews
+            BEGIN SELECT RAISE(ABORT, 'training quality reviews are append-only'); END
+        """)
+        conn.execute("""
+            CREATE TRIGGER trg_training_quality_reviews_no_delete
+            BEFORE DELETE ON training_example_quality_reviews
+            WHEN EXISTS (SELECT 1 FROM training_examples WHERE id=OLD.example_id)
+            BEGIN SELECT RAISE(ABORT, 'training quality reviews are append-only'); END
+        """)
+        conn.executemany("""
+            INSERT INTO training_example_quality_reviews
+                (id,example_id,example_revision,score,rubric_version,rationale,reviewer_user_id,reviewed_at)
+            VALUES(?,?,?,?,?,?,?,?)
+        """, [
+            (81, 51, 2, 80, "qa-quality-v1", "Quality history for the legacy draft.", 1,
+             "2026-03-09T00:00:00"),
+            (82, 52, 1, 95, "qa-quality-v1", "Quality history for the approved row.", 1,
+             "2026-03-10T00:00:00"),
+            (83, 53, 1, 40, "qa-quality-v1", "Quality history for the rejected row.", 1,
+             "2026-03-11T00:00:00"),
+        ])
+        conn.commit()
+        return conn
+
+    @staticmethod
+    def _migration_snapshot(conn):
+        schema = [
+            tuple(row) for row in conn.execute("""
+                SELECT type,name,tbl_name,sql FROM sqlite_master
+                WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name
+            """)
+        ]
+        data = {}
+        for table in (
+            "training_examples", "training_example_review_events",
+            "training_example_quality_reviews", "auth_users",
+        ):
+            data[table] = [
+                tuple(row) for row in conn.execute(f'SELECT * FROM "{table}" ORDER BY id')
+            ]
+        foreign_keys = {
+            table: [tuple(row) for row in conn.execute(f'PRAGMA foreign_key_list("{table}")')]
+            for table in (
+                "training_examples", "training_example_review_events",
+                "training_example_quality_reviews",
+            )
+        }
+        indexes = {
+            table: [tuple(row) for row in conn.execute(f'PRAGMA index_list("{table}")')]
+            for table in (
+                "training_examples", "training_example_review_events",
+                "training_example_quality_reviews",
+            )
+        }
+        sequence = [
+            tuple(row) for row in conn.execute(
+                "SELECT name,seq FROM sqlite_sequence ORDER BY name"
+            )
+        ]
+        return {
+            "schema": schema, "data": data, "foreign_keys": foreign_keys,
+            "indexes": indexes, "sequence": sequence,
+        }
+
+    def test_pr25_event_rebuild_faults_after_rename_and_after_copy_roll_back_exactly_then_retry(self):
+        checkpoints = ("event_copy", "old_event_drop", "event_trigger")
+        for checkpoint in checkpoints:
+            with self.subTest(checkpoint=checkpoint):
+                path = Path(self.temp_dir.name) / f"pr25-{checkpoint}.db"
+                conn = self._build_pr25_migration_fixture(path)
+                before = self._migration_snapshot(conn)
+                injected = {"hit": False}
+
+                def authorizer(action, arg1, arg2, database, trigger):
+                    if (
+                        checkpoint == "event_copy"
+                        and action == sqlite3.SQLITE_INSERT
+                        and arg1 == "training_example_review_events"
+                    ):
+                        injected["hit"] = True
+                        return sqlite3.SQLITE_DENY
+                    if (
+                        checkpoint == "old_event_drop"
+                        and action == sqlite3.SQLITE_DROP_TABLE
+                        and arg1 == "training_example_review_events_old"
+                    ):
+                        injected["hit"] = True
+                        return sqlite3.SQLITE_DENY
+                    if (
+                        checkpoint == "event_trigger"
+                        and action == sqlite3.SQLITE_CREATE_TRIGGER
+                        and arg1 == "trg_training_review_events_no_update"
+                    ):
+                        injected["hit"] = True
+                        return sqlite3.SQLITE_DENY
+                    return sqlite3.SQLITE_OK
+
+                conn.set_authorizer(authorizer)
+                with self.assertRaises(sqlite3.DatabaseError):
+                    db._migrate_training_review(conn)
+                conn.set_authorizer(None)
+                self.assertTrue(injected["hit"], f"fault checkpoint not reached: {checkpoint}")
+                self.assertTrue(conn.in_transaction)
+                conn.rollback()
+
+                # Rollback must restore the complete pre-migration DDL and data,
+                # including the renamed-table window, both histories, FK metadata,
+                # all explicit indexes/triggers and SQLite AUTOINCREMENT state.
+                self.assertEqual(self._migration_snapshot(conn), before)
+                self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+                # A clean retry must succeed; a second migration must be a no-op.
+                db._migrate_training_review(conn)
+                conn.commit()
+                migrated = self._migration_snapshot(conn)
+                db._migrate_training_review(conn)
+                conn.commit()
+                self.assertEqual(self._migration_snapshot(conn), migrated)
+                self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+                self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+                events = conn.execute("""
+                    SELECT id,example_id,action,reason,revision_from,revision_to,
+                           changed_fields,reviewer_user_id,reviewer_label,created_at
+                    FROM training_example_review_events ORDER BY id
+                """).fetchall()
+                self.assertEqual([row["id"] for row in events], [71, 72])
+                self.assertEqual([row["action"] for row in events], ["edited", "rejected"])
+                self.assertEqual([row["reviewer_label"] for row in events], ["Owner", "Owner"])
+                self.assertEqual([row["created_at"] for row in events], [
+                    "2026-03-07T00:00:00", "2026-03-08T00:00:00"
+                ])
+                self.assertEqual(conn.execute("""
+                    SELECT COUNT(*) FROM training_example_review_events WHERE action='approved'
+                """).fetchone()[0], 0, "approved legacy examples must not receive fabricated events")
+                quality = conn.execute("""
+                    SELECT id,example_id,example_revision,score,rubric_version,rationale,
+                           reviewer_user_id,reviewed_at
+                    FROM training_example_quality_reviews ORDER BY id
+                """).fetchall()
+                self.assertEqual([row["id"] for row in quality], [81, 82, 83])
+                self.assertEqual([row["example_id"] for row in quality], [51, 52, 53])
+                self.assertEqual([row["reviewed_at"] for row in quality], [
+                    "2026-03-09T00:00:00", "2026-03-10T00:00:00", "2026-03-11T00:00:00"
+                ])
+                conn.close()
+
+    def test_pr25_upgrade_fixture_preserves_all_statuses_both_histories_and_init_is_idempotent(self):
+        path = Path(self.temp_dir.name) / "pr25-complete-upgrade.db"
+        conn = self._build_pr25_migration_fixture(path)
+        legacy_events = [
+            tuple(row) for row in conn.execute(
+                "SELECT id,example_id,action,reason,revision_from,revision_to,changed_fields,"
+                "reviewer_user_id,created_at FROM training_example_review_events ORDER BY id"
+            )
+        ]
+        legacy_quality = [
+            tuple(row) for row in conn.execute(
+                "SELECT id,example_id,example_revision,score,rubric_version,rationale,"
+                "reviewer_user_id,reviewed_at FROM training_example_quality_reviews ORDER BY id"
+            )
+        ]
+        conn.close()
+
+        with patch("app.db.DB_PATH", str(path)):
+            db.init_db()
+            first = sqlite3.connect(path)
+            first.row_factory = sqlite3.Row
+            first_examples = [
+                tuple(row) for row in first.execute(
+                    "SELECT id,question,expected_answer,topic,citation_ids,status,revision,"
+                    "created_at,updated_at FROM training_examples ORDER BY id"
+                )
+            ]
+            self.assertEqual([row[0] for row in first_examples], [51, 52, 53])
+            self.assertEqual([row[5] for row in first_examples], ["draft", "approved", "rejected"])
+            self.assertEqual([row[1] for row in first_examples], [
+                "Legacy draft question", "Already approved question", "Rejected question"
+            ])
+            self.assertEqual([row[2] for row in first_examples], [
+                "Legacy draft answer", "Approved answer", "Rejected answer"
+            ])
+            self.assertEqual([row[3] for row in first_examples], ["elliott", "fibonacci", "volume"])
+            self.assertEqual([row[4] for row in first_examples], [
+                '["kb:1:0"]', '["kb:2:0"]', '["kb:3:0"]'
+            ])
+            self.assertEqual([row[6] for row in first_examples], [2, 1, 1])
+            self.assertEqual([row[7] for row in first_examples], [
+                "2026-03-01T00:00:00", "2026-03-03T00:00:00", "2026-03-05T00:00:00"
+            ])
+            self.assertEqual([row[8] for row in first_examples], [
+                "2026-03-02T00:00:00", "2026-03-04T00:00:00", "2026-03-06T00:00:00"
+            ])
+            migrated_events = [
+                tuple(row) for row in first.execute(
+                    "SELECT id,example_id,action,reason,revision_from,revision_to,changed_fields,"
+                    "reviewer_user_id,created_at FROM training_example_review_events ORDER BY id"
+                )
+            ]
+            self.assertEqual(migrated_events, legacy_events)
+            self.assertEqual([
+                tuple(row) for row in first.execute(
+                    "SELECT id,example_id,example_revision,score,rubric_version,rationale,"
+                    "reviewer_user_id,reviewed_at FROM training_example_quality_reviews ORDER BY id"
+                )
+            ], legacy_quality)
+            self.assertEqual(first.execute(
+                "SELECT COUNT(*) FROM training_example_review_events WHERE action='approved'"
+            ).fetchone()[0], 0)
+            first.close()
+
+            db.init_db()
+            db.init_db()
+
+        check = sqlite3.connect(path)
+        self.assertEqual(check.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+        self.assertEqual(check.execute("PRAGMA foreign_key_check").fetchall(), [])
+        self.assertEqual(check.execute(
+            "SELECT COUNT(*) FROM training_example_review_events"
+        ).fetchone()[0], 2)
+        self.assertEqual(check.execute(
+            "SELECT COUNT(*) FROM training_example_quality_reviews"
+        ).fetchone()[0], 3)
+        check.close()
+
+
 if __name__ == "__main__":
     unittest.main()

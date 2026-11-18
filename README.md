@@ -23,7 +23,16 @@ uvicorn app.main:app --reload
 Mở `http://127.0.0.1:8000/docs`.
 
 ## Chạy bằng Docker
-Tại thư mục gốc: `docker compose up --build`. API ở `http://localhost:8000`.
+
+Tại thư mục gốc: `docker compose up --build`. Compose mặc định chỉ publish API trên loopback của máy host (`127.0.0.1:8000:8000`); truy cập từ chính máy đó tại `http://127.0.0.1:8000`.
+
+Kiểm tra cấu hình đã được Compose resolve bằng `docker compose config`; port mapping mặc định phải có host IP `127.0.0.1`, không phải `0.0.0.0` hoặc mọi interface.
+
+**Chỉ khi chủ động cần truy cập qua LAN**, có thể bind vào địa chỉ IP cụ thể của host, ví dụ:
+```sh
+SMARTSTOCK_BIND_ADDRESS=192.168.1.10 docker compose up -d --build
+```
+Thay `192.168.1.10` bằng địa chỉ LAN thực tế của máy host. Không đặt biến này nếu chỉ dùng local; không dùng wildcard `0.0.0.0`. Opt-in chỉ thay đổi địa chỉ bind, **không làm HTTP an toàn**. Trước khi cho phép LAN/remote, phải có TLS termination tại reverse proxy được quản lý, firewall chỉ cho phép mạng/client tin cậy và xác minh cấu hình từ máy khác. Không publish cổng 8000 trực tiếp ra Internet.
 
 ## CSV OHLCV
 Header: `timestamp,open,high,low,close,volume`. Tạo mã qua `POST /api/v1/symbols`, sau đó gọi `POST /api/v1/candles/import-csv?symbol=FPT&source=licensed-provider` và đính kèm file CSV.
@@ -59,7 +68,7 @@ Nến tuần/tháng chỉ tổng hợp từ các phiên ngày có sẵn; hệ th
 - Phiên đăng nhập dùng bearer token ngẫu nhiên, chỉ lưu hash SHA-256 ở backend, hết hạn sau 14 ngày; đăng xuất thu hồi token.
 - Android chỉ giữ token trong bộ nhớ ứng dụng; đóng ứng dụng sẽ cần đăng nhập lại.
 - Các API ghi dữ liệu, watchlist, Knowledge Base, Training Room và quản lý phiên bản quy tắc yêu cầu đăng nhập. Một số API GET thị trường/báo cáo kỹ thuật vẫn công khai.
-- Đây là mô hình **single-owner cho máy chủ cục bộ**, chưa hỗ trợ nhiều người dùng hoặc phân quyền theo từng người. Không mở cổng ra Internet công cộng; nếu truy cập qua LAN, chỉ dùng mạng tin cậy và cấu hình firewall phù hợp. Kết nối HTTP hiện chưa mã hóa, vì vậy không nhập bootstrap secret qua Wi-Fi/mạng không tin cậy; cần bổ sung TLS trước khi dùng trên mạng không tin cậy. Chưa có rate-limit nên không coi đây là triển khai production public.
+- Đây là mô hình **single-owner cho máy chủ cục bộ**, chưa hỗ trợ nhiều người dùng hoặc phân quyền theo từng người. Docker Compose mặc định bind cổng API vào `127.0.0.1` trên host; việc opt-in bind địa chỉ LAN không tự cung cấp mã hóa hay bảo vệ truy cập. Trước khi dùng LAN/remote phải cấu hình TLS termination và firewall chỉ cho phép mạng/client tin cậy; không mở trực tiếp cổng 8000 ra Internet. HTTP không mã hóa và chưa có rate-limit login/bootstrap; không coi đây là triển khai production public.
 
 ## Knowledge Base (SP-014)
 - Upload: `POST /api/v1/knowledge/documents?source=research-note` (multipart field `file`; optional `title`).
