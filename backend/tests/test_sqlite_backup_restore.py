@@ -138,19 +138,20 @@ def _bootstrap_pair_matches(database_path: Path, secret_path: Path) -> bool:
 class SQLiteBackupRestoreTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp_dir.cleanup)
         self.root = Path(self.temp_dir.name)
         self.source_path = self.root / "source" / "smartstock.db"
         self.secret_path = self.root / "bootstrap" / "bootstrap.secret"
 
         # Override any host/CI setting before auth bootstrap code can resolve
-        # its secret path. Keep the patch active through test cleanup.
+        # its secret path. Register env restoration first so LIFO cleanup keeps
+        # this isolated path active while TemporaryDirectory is removed.
         self.env_patch = patch.dict(
             os.environ,
             {"SMARTSTOCK_BOOTSTRAP_SECRET_FILE": str(self.secret_path)},
         )
         self.env_patch.start()
         self.addCleanup(self.env_patch.stop)
+        self.addCleanup(self.temp_dir.cleanup)
 
         self.db_patch = patch("app.db.DB_PATH", str(self.source_path))
         self.db_patch.start()
